@@ -54,13 +54,18 @@ class NativeListener(Listener):
                     db.execute('INSERT OR IGNORE INTO receipt_confirmed VALUES (?)',(intent,))
                     db.execute('DELETE FROM receipt_outbox WHERE intent_id=?',(intent,))
 
-    def _receipt(self,item,revision,answers,disposition,evidence,intent):
+    def _receipt(self,item,revision,answers,disposition,evidence,intent,defer=False):
         body={'intent_id':intent,'request_id':item['id'],'revision':revision,'answers':answers,'disposition':disposition,'evidence':evidence}
         with self.ledger() as db:
-            if db.execute('SELECT 1 FROM receipt_confirmed WHERE intent_id=?',(intent,)).fetchone():return
+            if db.execute('SELECT 1 FROM receipt_confirmed WHERE intent_id=?',(intent,)).fetchone():return True
             db.execute('INSERT OR IGNORE INTO receipt_outbox VALUES (?,?)',(intent,json.dumps(body,sort_keys=True)))
-        try:self._flush()
-        except SOURCE_ERRORS:pass # Exact receipt remains durable for readback/retry.
+        if defer:return False
+        try:self._flush();return True
+        except SOURCE_ERRORS:return False # Exact receipt remains durable for readback/retry.
+
+    def _unknown(self,result):
+        with self.ledger() as db:known=db.execute('SELECT COUNT(*) FROM pending').fetchone()[0]
+        return {**result,'checked':False,'error':'source_unavailable','pending_known':known}
 
     def recover(self,request_id,evidence):
         if not isinstance(evidence,str) or not evidence.strip() or len(evidence)>4000:raise ValueError('Recovery requires evidence that the previous worker stopped and its actions were reconciled')
@@ -79,13 +84,19 @@ class NativeListener(Listener):
         try:
             me=self._identity();rows=self._work(me);self._flush()
         except SOURCE_ERRORS:
-            with self.ledger() as db:known=db.execute('SELECT COUNT(*) FROM pending').fetchone()[0]
-            return {'checked':False,'error':'source_unavailable','pending_known':known,'attempts':[]}
+            return self._unknown({'attempts':[]})
         pending=[r for r in rows if r['state'] not in ('resumed','completed')]
         result={'checked':True,'pending':len(pending),'attempts':[],'errors':[]}
         with self.ledger() as db:
             db.execute('DELETE FROM pending');db.executemany('INSERT INTO pending VALUES (?)',[(r['id'],) for r in pending])
-        for item in pending:
+        source_failed=False
+        for candidate in pending:
+            # Cached references cannot authorize a later launch after expiry,
+            # revocation, a changed answer, or another worker's completion.
+            try:item=self._work(self._identity(),candidate['id'])[0]
+            except SOURCE_ERRORS:
+                source_failed=True;break
+            if item['state'] in ('resumed','completed'):continue
             if len(item['revisions'])!=1:
                 result['errors'].append({'request_id':item['id'],'code':'question_conflict_reconcile'});continue
             revision=item['revisions'][0]['id'];answers=sorted(a['id'] for a in item['answers'])
@@ -93,7 +104,8 @@ class NativeListener(Listener):
             route=routes.get(item['agent_id'])
             if not route:
                 result['errors'].append({'request_id':item['id'],'code':'route_missing'})
-                self._receipt(item,revision,answers,'blocked','Configure a trusted local route for this agent, then check again. No agent progress was observed.','missing:'+item['id']+':'+revision+':'+hashlib.sha256(json.dumps(answers).encode()).hexdigest()[:16]);continue
+                if not self._receipt(item,revision,answers,'blocked','Configure a trusted local route for this agent, then check again. No agent progress was observed.','missing:'+item['id']+':'+revision+':'+hashlib.sha256(json.dumps(answers).encode()).hexdigest()[:16]):source_failed=True;break
+                continue
             payload={'request_id':item['id'],'agent_id':item['agent_id'],'revision':revision,'answer_ids':answers}
             snapshot=[payload,sorted(a['id'] for a in item['actions']),sorted(a['id'] for a in item['settlements']),route]
             key=hashlib.sha256(json.dumps(snapshot,sort_keys=True).encode()).hexdigest();now=time.time()
@@ -123,7 +135,7 @@ class NativeListener(Listener):
                 for stage in ('completed','resumed','acknowledged'):
                     if any(p['payload']['stage']==stage for p in fresh):outcome=stage;break
             except SOURCE_ERRORS:
-                outcome='delivery_unverified';disposition='unknown'
+                outcome='delivery_unverified';disposition='unknown';source_failed=True
             with self.ledger() as db:
                 db.execute('BEGIN IMMEDIATE')
                 held=db.execute('SELECT 1 FROM claims WHERE request_id=? AND claim_id=?',(item['id'],claim_id)).fetchone()
@@ -131,18 +143,20 @@ class NativeListener(Listener):
                     db.execute('UPDATE attempts SET result=? WHERE delivery_key=?',(outcome,key));db.execute('DELETE FROM claims WHERE request_id=? AND claim_id=?',(item['id'],claim_id))
                 else:outcome='claim_replaced_reconcile_required';disposition='unknown'
             evidence={'queued':'Trusted local launcher returned zero. This receipt does not assert agent progress.','failed':'Local route failed or timed out. Repair the trusted route and check retained actions before retrying.','unknown':'Delivery or source could not be verified. Inspect the previous worker and retained actions before retrying.'}[disposition]
-            self._receipt(item,revision,answers,disposition,evidence,claim_id)
+            if not self._receipt(item,revision,answers,disposition,evidence,claim_id,defer=source_failed):source_failed=True
             result['attempts'].append({'request_id':item['id'],'result':outcome})
+            if source_failed:break
         repairs={'dispatch_recovery_required':'Verify the previous process stopped and reconcile its effects, then use recover with that evidence before another dispatch.',
                  'retry_limit_repair_route_or_reconcile':'Three attempts produced no fresh agent progress. Repair the trusted route or reconcile the retained work before another work or route snapshot can dispatch.'}
         for error in result['errors']:
+            if source_failed:break
             if error['code'] not in repairs:continue
             item=next(r for r in pending if r['id']==error['request_id'])
             revision=item['revisions'][0]['id'];answers=sorted(a['id'] for a in item['answers'])
             intent='gap:'+hashlib.sha256(json.dumps([item['id'],revision,answers,error['code'],routes.get(item['agent_id'])],sort_keys=True).encode()).hexdigest()
-            self._receipt(item,revision,answers,'blocked',repairs[error['code']],intent)
+            if not self._receipt(item,revision,answers,'blocked',repairs[error['code']],intent):source_failed=True
         with self.ledger() as db:result['receipts_pending']=db.execute('SELECT COUNT(*) FROM receipt_outbox').fetchone()[0]
-        return result
+        return self._unknown(result) if source_failed else result
 
 
 def main():

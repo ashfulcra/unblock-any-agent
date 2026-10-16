@@ -14,6 +14,7 @@ import sys
 import uuid
 
 from .client import private_read
+from .store import DomainError
 
 
 def build_invocation(config, output, payload, session_id, fresh, executable, native=False):
@@ -40,7 +41,11 @@ def main():
     try:
         payload=json.load(sys.stdin)
         cfg=private_read(args.config)
-        if cfg.get('kind')!='agent' or cfg.get('id')!=payload.get('agent_id'):
+        if cfg.get('transport')=='fulcra-native':
+            from .native_client import NativeClient
+            identity=NativeClient.from_file(args.config).call('identity')
+        else:identity=cfg
+        if identity.get('kind')!='agent' or identity.get('id')!=payload.get('agent_id'):
             raise ValueError('Worker config does not match addressed agent')
         executable=shutil.which('claude')
         if not executable:raise ValueError('Claude Code executable unavailable')
@@ -53,7 +58,7 @@ def main():
         success=process.returncode==0 and result.get('type')=='result' and not result.get('is_error',False)
         print(json.dumps({'claude_session':str(uuid.UUID(args.session_id)),'invocation_succeeded':success,'native_exit_code':process.returncode,'result_type':result.get('subtype')}))
         raise SystemExit(0 if success else 1)
-    except (ValueError,KeyError,OSError,subprocess.TimeoutExpired):
+    except (ValueError,KeyError,OSError,DomainError,subprocess.TimeoutExpired):
         print(json.dumps({'error':'claude_route_failed'}),file=sys.stderr)
         raise SystemExit(1) from None
 

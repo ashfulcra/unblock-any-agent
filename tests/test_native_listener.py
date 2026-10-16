@@ -19,12 +19,14 @@ ANSWER='00000000-0000-4000-8000-000000000003'
 
 class FixtureClient:
     def __init__(self,path):
-        self.path=path;self.fail=False;self.receipts=[]
+        self.path=path;self.fail=False;self.receipts=[];self.fail_code=503;self.fail_receipt=False
         self.identity={'kind':'listener','id':'receiver','environment':'here','agent_ids':['alpha']}
     def call(self,operation,data=None):
-        if self.fail:raise DomainError('source_unavailable',503)
+        if self.fail:raise DomainError('source_unavailable',self.fail_code)
         if operation=='identity':return copy.deepcopy(self.identity)
         if operation=='delivery':
+            if self.fail_receipt:
+                self.fail=True;raise DomainError('revoked',self.fail_code)
             self.receipts.append(data);return {'record_id':'receipt','visibility':'visible'}
         rows=json.loads(self.path.read_text())
         if operation=='recover':rows=[r for r in rows if r['id']==data['request_id']]
@@ -60,6 +62,23 @@ class NativeListenerTests(unittest.TestCase):
         self.assertEqual(json.loads(self.source.read_text())[0]['progress'],[])
         self.client.fail=True;result=listener.tick()
         self.assertFalse(result['checked']);self.assertEqual(result['pending_known'],1)
+
+    def test_multi_item_authorization_or_source_loss_stops_the_dispatch_batch(self):
+        self.answer();neighbor=copy.deepcopy(self.row);neighbor['id']='00000000-0000-4000-8000-000000000009'
+        self.source.write_text(json.dumps([self.row,neighbor]))
+        for status in (401,503):
+            for boundary in ('post_dispatch','receipt'):
+                client=FixtureClient(self.source);client.fail_code=status
+                listener=NativeListener(client,'here',self.routes,self.root/f'{status}-{boundary}.db',retry_after=0);launched=[]
+                def run(route,payload):
+                    launched.append(payload['request_id'])
+                    if boundary=='post_dispatch':client.fail=True
+                    else:client.fail_receipt=True
+                    return 'queued'
+                listener._run=run;result=listener.tick()
+                self.assertEqual(launched,[RID],f'{status} at {boundary} must stop all subsequent launches')
+                self.assertFalse(result['checked']);self.assertEqual(result['pending_known'],2)
+                with listener.ledger() as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM receipt_outbox').fetchone()[0],1)
 
     def test_acknowledged_without_continuation_does_not_suppress_all_future_pickup(self):
         self.answer();listener=self.listener()
