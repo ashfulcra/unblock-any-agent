@@ -1,0 +1,4236 @@
+diff --git a/README.md b/README.md
+index bddd5a0..32d6f0f 100644
+--- a/README.md
++++ b/README.md
+@@ -49,3 +49,7 @@ Please feel free to reach out via [the GitHub repo for this project](https://git
+ <a href="https://glama.ai/mcp/servers/@fulcradynamics/fulcra-context-mcp">
+   <img width="380" height="200" src="https://glama.ai/mcp/servers/@fulcradynamics/fulcra-context-mcp/badge" />
+ </a>
++
++## Optional Unblock resource issuer
++
++The disabled-by-default [Unblock issuer candidate](docs/unblock-issuer.md) adds explicit worker consent using the existing Fulcra callback and configuration. Source tests and native bridge evidence are separate from live issuer and ChatGPT web acceptance.
+diff --git a/docs/unblock-issuer.md b/docs/unblock-issuer.md
+new file mode 100644
+index 0000000..c73f635
+--- /dev/null
++++ b/docs/unblock-issuer.md
+@@ -0,0 +1,39 @@
++# Optional Unblock resource issuer
++
++This is source preparation for an isolated Unblock authorization branch. It is disabled by default. No production issuer deployment, real GCS transaction acceptance or actual ChatGPT web connection is established by this change.
++
++The dashboard and personal forks continue to use the Fulcra webapp skill's supplied authentication. They need no newly registered OAuth client or external database. This optional branch reuses this service's existing upstream Fulcra configuration and registered `/callback`, and offers dynamic registration for its OAuth clients.
++
++## Scope and binding
++
++The candidate issuer identifier is the existing service origin plus `/unblock`. Its metadata is at `/.well-known/oauth-authorization-server/unblock`; its authorize, token, registration and revocation endpoints live under `/unblock`. The original issuer, tools, callbacks and token files retain their existing path.
++
++Each human approves one verified owned `my.fulcra.ai` dashboard, agent ID and environment. The requesting client and callback are displayed. Worker tokens are the native dashboard's existing sealed grants, capped by the upstream session and one hour. Renewal consent lasts at most 24 hours. Use the same agent/environment on reconnect to recover existing questions and action evidence.
++
++Only the `unblock:worker` scope is available. The client receives neither owner access nor owner refresh credentials. Existing Fulcra MCP tokens cannot authorize Unblock, and Unblock tokens do not enter this server's original MCP access-token namespace.
++
++## Durable state
++
++The existing configured `state_bucket` is accessed through the GCS API under `unblock/v1/`. Code, login, consent, owner, refresh, access and revocation keys are distinct and use hashed identifiers. Mounted-file writes and process locks are not used as cross-instance transactions. Missing configuration disables only this optional branch; unavailable source state is not an empty queue.
++
++Login state is independent of client state. Owner credentials belong to one verified login, rather than an OAuth client slot. A conditional claim precedes upstream refresh; an uncertain refresh is never repeated after restart. Known new credentials survive concurrent revocation for cleanup, while new access remains denied.
++
++An enrollment or revocation intent is retained before its external effect. Lost responses require exact native source readback. A retained renewal intent can reconcile its exact native receipt after replacement, using already-known owner access without taking over upstream refresh. Unknown receipts remain unresolved. Known refresh receipts can complete private publication without another grant; the old refresh token may recover the same replacement for 120 seconds, with the actual remaining access expiry. Code replay with matching client, redirect, PKCE and resource requests family revocation, including after code expiry. Public clients can revoke with their client ID and token; confidential clients retain the SDK authentication checks. Revocation does not return success while native readback is unresolved.
++
++## Before enabling a deployment
++
++Prepare an approved narrow rollout on the existing registered callback origin, or use a staging callback origin that is already authorized. Reuse the service's existing `oidc_server_url`, `oidc_client_id`, `fulcra_oidc_domain`, `fulcra_api` and `state_bucket`. The upstream callback stays `/callback`; a new staging hostname is not assumed to be registered. `UNBLOCK_ENABLED=true` also requires an explicit resource policy: `UNBLOCK_RESOURCES` is a JSON list of selected pilot resource URLs. For the later public rollout, `UNBLOCK_ALLOW_OWNED_RESOURCES=true` permits all canonically verified owned dashboards, so personal forks need no per-user central allowlist. Default policy is closed. This change sets no production flags, IAM permissions, client registrations or bucket lifecycle policies.
++
++Run an actual disposable-object generation/CAS probe with two clients in an explicitly authorized test bucket. Then prove real upstream login, consent, two-instance callback/code exchange, refresh uncertainty, project removal/domain change, native revocation and replay denial in both directions. The live native bridge proof is separate from issuer acceptance; unit generation fakes are separate from real GCS.
++
++Do not point an Unblock dashboard's protected-resource metadata at this issuer until its actual flow passes. Then prove ChatGPT web discovery, reconnect/expiry/revocation and replacement recovery. Event subscription and actual delayed agent pickup are subsequent work; these routes install no listener or persistent scheduler. Public plugin publication and publisher/license decisions remain separate.
++
++## Pending recovery
++
++Records remain private in the authorized bucket. A pending or uncertain record never establishes successful token issuance, revocation or agent progress. `UnblockProvider.recover_pending_code(code_key)` is a private operator method for a retained code record whose `revocation_requested` flag is set. It reads its frozen native intent/receipt and records actual revocation readback; it exposes no public recovery endpoint. Pending revocation uses its frozen grant ID even when re-enrollment correctly rejects that revoked grant.
++
++An operator must retain unresolved keys and poll/read them from the service environment until known, or surface the exact source/owner-reconnect prerequisite. There is no automatic lease takeover for unknown upstream credential effects. A disabled/replaced instance must not discard the bucket, private credentials, grant lineage or pending obligations. Establish that operational receiver before claiming unattended production coverage.
++
++Local tests cover the HTTP lifecycle with synthetic external authentication and generation-aware storage doubles. The original service's pre-existing skips, expected failures and Starlette warning remain reported separately. The implementation plan and broader host acceptance live in [ashfulcra/unblock-any-agent](https://github.com/ashfulcra/unblock-any-agent).
++
++The consent cookie uses Secure, HttpOnly, `__Host-`, Path=/ and SameSite=Lax for the top-level cross-site sign-in return. Explicit POST Origin, per-transaction cookie and nonce checks protect approval. A controlled real-browser callback/redirect probe omitted the Strict cookie and included the Lax cookie; this is separate from actual Fulcra login acceptance. [Browser cookie behavior](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie).
+diff --git a/fulcra_mcp/main.py b/fulcra_mcp/main.py
+index 273e0c9..75fa0d5 100644
+--- a/fulcra_mcp/main.py
++++ b/fulcra_mcp/main.py
+@@ -21,6 +21,11 @@ from .logging_config import configure_logging
+ from .provider import oauth_provider
+ from .settings import settings
+ from .tools import tools_mcp
++from .unblock_consent import (
++    callback_response as unblock_callback_response,
++    create_unblock_routes,
++    optional_provider,
++)
+ 
+ configure_logging(settings.log_format)
+ logger = structlog.getLogger(__name__)
+@@ -75,6 +80,11 @@ mcp_asgi_app = mcp.http_app(path="/", middleware=cors_middleware, stateless_http
+ 
+ app = FastAPI(lifespan=mcp_asgi_app.lifespan, debug=True)
+ 
++# Disabled by default; existing sign-in and MCP token namespaces are unchanged.
++unblock_provider = optional_provider()
++if unblock_provider is not None:
++    app.router.routes.extend(create_unblock_routes(unblock_provider))
++
+ STATIC_DIR = Path(__file__).parent / "static"
+ 
+ 
+@@ -236,6 +246,10 @@ async def callback_handler(request: Request) -> Response:
+     if not code or not state:
+         raise HTTPException(400, "Missing code or state parameter")
+ 
++    if (unblock_provider is not None and unblock_provider.owns_state(state)
++            and state not in oauth_provider.state_mapping):
++        return await unblock_callback_response(request, unblock_provider)
++
+     try:
+         redirect_uri = await oauth_provider.handle_callback(code, state)
+         return RedirectResponse(status_code=302, url=redirect_uri)
+diff --git a/fulcra_mcp/settings.py b/fulcra_mcp/settings.py
+index 4418019..69f14d7 100644
+--- a/fulcra_mcp/settings.py
++++ b/fulcra_mcp/settings.py
+@@ -9,6 +9,10 @@ class Settings(BaseSettings):
+     # changed atomically across instances go through the GCS API instead of the
+     # mount, which can't do that.
+     state_bucket: str | None = None
++    # Optional isolated Unblock issuer; reuses existing callback/configuration.
++    unblock_enabled: bool = False
++    unblock_resources: list[str] = []
++    unblock_allow_owned_resources: bool = False
+     oidc_server_url: str = "http://localhost:4499"
+     fulcra_environment: str = "stdio"
+     port: int = 4499
+diff --git a/fulcra_mcp/unblock_bridge.py b/fulcra_mcp/unblock_bridge.py
+new file mode 100644
+index 0000000..09b1e72
+--- /dev/null
++++ b/fulcra_mcp/unblock_bridge.py
+@@ -0,0 +1,387 @@
++"""Verified owner/deployment bridge to the existing native worker service."""
++
++from dataclasses import dataclass, field
++import re
++import time
++from urllib.parse import urlsplit
++from uuid import UUID
++
++import httpx
++
++
++class BridgeRejected(Exception):
++    """A proven authorization/binding failure; reconnect or correct consent."""
++
++
++class BridgeUnavailable(Exception):
++    """The source/effect is unknown. Retain the original frozen intent."""
++
++
++@dataclass(frozen=True)
++class OwnerAccess:
++    token: str = field(repr=False)
++    expires_at: int
++
++
++@dataclass(frozen=True)
++class ProjectBinding:
++    subject: str
++    project_id: str
++    origin: str
++    resource: str
++    agent: str
++    environment: str
++    name: str
++
++
++@dataclass(frozen=True)
++class NativeGrantReceipt:
++    grant_id: str
++    record_id: str
++    credential: str = field(repr=False)
++    expires_at: int
++
++
++def _uuid(value):
++    try:
++        return str(UUID(value))
++    except (ValueError, TypeError, AttributeError):
++        raise BridgeRejected("invalid project or grant reference") from None
++
++
++def _origin(domain):
++    if not isinstance(domain, str) or not re.fullmatch(
++        r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.my\.fulcra\.ai",
++        domain,
++    ):
++        raise BridgeRejected("unsupported canonical deployment domain")
++    return "https://" + domain
++
++
++class NativeBridge:
++    def __init__(self, api_origin: str, *, transport=None, now=time.time):
++        parts = urlsplit(api_origin)
++        if (
++            parts.scheme != "https"
++            or not parts.hostname
++            or parts.username
++            or parts.password
++            or parts.query
++            or parts.fragment
++            or parts.path not in ("", "/")
++            or parts.port not in (None, 443)
++        ):
++            raise ValueError("a trusted HTTPS platform API origin is required")
++        self.api_origin = api_origin.rstrip("/")
++        self.transport, self.now = transport, now
++
++    def _owner(self, owner: OwnerAccess):
++        if (
++            not isinstance(owner.token, str)
++            or len(owner.token) > 20000
++            or not re.fullmatch(r"[A-Za-z0-9._~-]+", owner.token)
++            or type(owner.expires_at) is not int
++            or owner.expires_at <= self.now()
++        ):
++            raise BridgeRejected("owner authentication expired or invalid")
++
++    async def _request(self, method, url, *, headers, body=None, list_result=False):
++        try:
++            async with httpx.AsyncClient(
++                timeout=15, follow_redirects=False, transport=self.transport
++            ) as client:
++                response = await client.request(
++                    method, url, headers=headers, json=body, follow_redirects=False
++                )
++            # No redirects, including a redirect returned by an owned app.
++            if 300 <= response.status_code < 400:
++                raise BridgeRejected("source redirect is not permitted")
++            try:
++                result = response.json()
++            except (ValueError, UnicodeError):
++                result = None
++            if isinstance(result, dict) and result.get("outcome") == "uncertain":
++                raise BridgeUnavailable("source publication remains uncertain")
++            if response.status_code in (400, 401, 403, 404):
++                raise BridgeRejected("source rejected the approved binding")
++            if response.status_code not in (200, 202) or not isinstance(
++                result, list if list_result else dict
++            ):
++                raise BridgeUnavailable("source response unavailable")
++            return result
++        except (BridgeRejected, BridgeUnavailable):
++            raise
++        except Exception:
++            raise BridgeUnavailable("source request outcome unavailable") from None
++
++    async def _platform(self, owner, path, *, list_result=False):
++        self._owner(owner)
++        return await self._request(
++            "GET",
++            self.api_origin + path,
++            headers={"Authorization": "Bearer " + owner.token},
++            list_result=list_result,
++        )
++
++    async def resolve_owned_project(
++        self, owner, project_id, resource, agent, environment, name
++    ):
++        project_id = _uuid(project_id)
++        if (
++            not isinstance(agent, str)
++            or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,99}", agent)
++            or not isinstance(environment, str)
++            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", environment)
++            or not isinstance(name, str)
++            or not name.strip()
++            or len(name) > 100
++        ):
++            raise BridgeRejected("invalid approved worker or environment")
++        user = await self._platform(owner, "/user/v1alpha1/info")
++        subject = user.get("userid")
++        if not isinstance(subject, str) or not subject or len(subject) > 200:
++            raise BridgeUnavailable("verified owner identity unavailable")
++        project = await self._platform(owner, "/user/v1/deploy/project/" + project_id)
++        if project.get("id") != project_id:
++            raise BridgeRejected("owned project does not match")
++        origin = _origin(project.get("domain"))
++        if resource != origin + "/mcp":
++            raise BridgeRejected("resource does not match canonical owned deployment")
++        return ProjectBinding(
++            subject, project_id, origin, resource, agent, environment, name
++        )
++
++    async def find_project(self, owner, resource):
++        projects = await self._platform(
++            owner, "/user/v1/deploy/project", list_result=True
++        )
++        matches = []
++        for project in projects:
++            try:
++                origin = _origin(project.get("domain"))
++            except (BridgeRejected, AttributeError):
++                continue
++            if resource == origin + "/mcp":
++                matches.append(project)
++        if len(matches) != 1:
++            raise BridgeRejected("resource needs one verified owned deployment")
++        return await self.resolve_owned_project(
++            owner,
++            matches[0].get("id"),
++            resource,
++            "pending-consent",
++            "pending-consent",
++            "Pending consent",
++        )
++
++    async def _revalidate(self, binding, owner):
++        current = await self.resolve_owned_project(
++            owner,
++            binding.project_id,
++            binding.resource,
++            binding.agent,
++            binding.environment,
++            binding.name,
++        )
++        if current != binding:
++            raise BridgeRejected("approved owner or deployment changed")
++        return current
++
++    async def _native(self, binding, owner, operation, body=None):
++        headers = {
++            "Cookie": "fulcra_access_token=" + owner.token,
++            "Origin": binding.origin,
++        }
++        return await self._request(
++            "POST" if body is not None else "GET",
++            binding.origin + "/api/unblock/" + operation,
++            headers=headers,
++            body=body,
++        )
++
++    async def prepare_enrollment(self, binding, owner, intent_id, *, renewal_of=None):
++        await self._revalidate(binding, owner)
++        if (
++            not isinstance(intent_id, str)
++            or not intent_id.strip()
++            or len(intent_id) > 160
++        ):
++            raise BridgeRejected("stable enrollment intent required")
++        if renewal_of is not None:
++            renewal_of = _uuid(renewal_of)
++        prepared = await self._native(binding, owner, "prepare_enrollment")
++        expiry = prepared.get("expires_at")
++        if type(expiry) is not int or expiry <= self.now():
++            raise BridgeUnavailable("prepared native expiry unavailable")
++        return {
++            "intent_id": intent_id,
++            "agent_id": binding.agent,
++            "name": binding.name,
++            "kind": "agent",
++            "environment": binding.environment,
++            "expires_at": min(expiry, owner.expires_at, int(self.now()) + 3600),
++            "renewal_of": renewal_of,
++        }
++
++    def _intent(self, binding, owner, intent):
++        if (
++            not isinstance(intent, dict)
++            or set(intent)
++            != {
++                "intent_id",
++                "agent_id",
++                "name",
++                "kind",
++                "environment",
++                "expires_at",
++                "renewal_of",
++            }
++            or intent.get("agent_id") != binding.agent
++            or intent.get("name") != binding.name
++            or intent.get("kind") != "agent"
++            or intent.get("environment") != binding.environment
++            or not isinstance(intent.get("intent_id"), str)
++            or not intent["intent_id"].strip()
++            or len(intent["intent_id"]) > 160
++            or type(intent.get("expires_at")) is not int
++            or not self.now()
++            < intent["expires_at"]
++            <= min(owner.expires_at, int(self.now()) + 3600)
++        ):
++            raise BridgeRejected("enrollment intent changed or expired")
++        if (
++            intent["renewal_of"] is not None
++            and _uuid(intent["renewal_of"]) != intent["renewal_of"]
++        ):
++            raise BridgeRejected("renewal reference changed")
++
++    async def _receipt(self, binding, response, intent):
++        try:
++            grant_id, record_id = (
++                _uuid(response.get("grant_id")),
++                _uuid(response.get("record_id")),
++            )
++            credential = response.get("credential")
++            if (
++                response.get("agent_id") != binding.agent
++                or response.get("kind") != "agent"
++                or response.get("environment") != binding.environment
++                or response.get("agent_ids") != [binding.agent]
++                or response.get("expires_at") != intent["expires_at"]
++                or not isinstance(credential, str)
++                or not credential
++                or len(credential) > 20000
++            ):
++                raise BridgeUnavailable("native grant receipt does not match")
++            checked = await self._request(
++                "GET",
++                binding.origin + "/api/unblock/enrollment",
++                headers={"Authorization": "Bearer " + credential},
++            )
++            if checked != {
++                "kind": "agent",
++                "id": binding.agent,
++                "environment": binding.environment,
++                "grant_id": grant_id,
++                "expires_at": intent["expires_at"],
++                "agent_ids": [binding.agent],
++            }:
++                raise BridgeUnavailable("native enrollment readback does not match")
++            return NativeGrantReceipt(
++                grant_id, record_id, credential, intent["expires_at"]
++            )
++        except BridgeRejected:
++            # The POST may already have succeeded; denied/malformed readback
++            # cannot justify another initial enrollment or an issued OAuth token.
++            raise BridgeUnavailable(
++                "native grant readback remains unresolved"
++            ) from None
++
++    async def enroll_worker(self, binding, owner, frozen_intent):
++        await self._revalidate(binding, owner)
++        self._intent(binding, owner, frozen_intent)
++        response = await self._native(binding, owner, "enroll", frozen_intent)
++        return await self._receipt(binding, response, frozen_intent)
++
++    async def reconcile_enrollment(self, binding, owner, frozen_intent):
++        await self._revalidate(binding, owner)
++        self._intent(binding, owner, frozen_intent)
++        attention = await self._native(binding, owner, "attention")
++        if attention.get("source") != "checked" or not isinstance(
++            attention.get("grants"), list
++        ):
++            raise BridgeUnavailable("native enrollment source unavailable")
++        matches = [
++            row
++            for row in attention["grants"]
++            if row.get("intent_id") == frozen_intent["intent_id"]
++        ]
++        if not matches:
++            return None
++        if len(matches) != 1:
++            raise BridgeRejected("conflicting enrollment receipts")
++        row = matches[0]
++        if (
++            any(row.get(key) != value for key, value in frozen_intent.items())
++            or row.get("agent_ids") != [binding.agent]
++            or row.get("revoked") is not False
++        ):
++            raise BridgeRejected("retained enrollment scope changed or was revoked")
++        # Only after the exact source record exists can the idempotent native
++        # enroll operation return another sealed representation of that grant.
++        response = await self._native(binding, owner, "enroll", frozen_intent)
++        receipt = await self._receipt(binding, response, frozen_intent)
++        if receipt.record_id != row.get("record_id") or receipt.grant_id != row.get(
++            "grant_id"
++        ):
++            raise BridgeUnavailable("recovered enrollment receipt changed")
++        return receipt
++
++    async def _owned_grant(self, binding, owner, grant_id):
++        grant_id = _uuid(grant_id)
++        await self._revalidate(binding, owner)
++        attention = await self._native(binding, owner, "attention")
++        if attention.get("source") != "checked" or not isinstance(
++            attention.get("grants"), list
++        ):
++            raise BridgeUnavailable("native grant source unavailable")
++        rows = [row for row in attention["grants"] if row.get("grant_id") == grant_id]
++        if len(rows) != 1:
++            raise BridgeUnavailable("native grant receipt unavailable or conflicting")
++        row = rows[0]
++        if (
++            row.get("agent_id") != binding.agent
++            or row.get("environment") != binding.environment
++            or row.get("name") != binding.name
++            or row.get("kind") != "agent"
++            or row.get("agent_ids") != [binding.agent]
++        ):
++            raise BridgeRejected("native grant is outside the approved worker scope")
++        if type(row.get("revoked")) is not bool:
++            raise BridgeUnavailable("native revocation source unavailable")
++        return row
++
++    async def revocation_observed(self, binding, owner, grant_id):
++        return (await self._owned_grant(binding, owner, grant_id))["revoked"]
++
++    async def revoke_worker(self, binding, owner, grant_id, intent_id):
++        row = await self._owned_grant(binding, owner, grant_id)
++        if row["revoked"]:
++            return True
++        if (
++            not isinstance(intent_id, str)
++            or not intent_id.strip()
++            or len(intent_id) > 160
++        ):
++            raise BridgeRejected("stable revocation intent required")
++        # The caller durably freezes this intent before calling. After an
++        # uncertain response it uses revocation_observed, never a blind resend.
++        await self._native(
++            binding,
++            owner,
++            "revoke",
++            {"intent_id": intent_id, "grant_id": row["grant_id"]},
++        )
++        if not await self.revocation_observed(binding, owner, row["grant_id"]):
++            raise BridgeUnavailable("native revocation is pending source readback")
++        return True
+diff --git a/fulcra_mcp/unblock_consent.py b/fulcra_mcp/unblock_consent.py
+new file mode 100644
+index 0000000..fcf052f
+--- /dev/null
++++ b/fulcra_mcp/unblock_consent.py
+@@ -0,0 +1,354 @@
++"""Optional resource issuer HTTP routes and explicit human worker consent."""
++
++import hmac
++from html import escape
++
++import structlog
++from mcp.server.auth.handlers.authorize import AuthorizationHandler
++from mcp.server.auth.handlers.metadata import MetadataHandler
++from mcp.server.auth.handlers.revoke import RevocationHandler
++from mcp.server.auth.middleware.client_auth import ClientAuthenticator
++from mcp.server.auth.provider import TokenError
++from mcp.server.auth.routes import build_metadata, create_auth_routes, cors_middleware
++from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
++from pydantic import AnyHttpUrl
++from starlette.applications import Starlette
++from starlette.datastructures import FormData
++from starlette.middleware import Middleware
++from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
++from starlette.routing import Mount, Route
++
++from .settings import settings
++from .unblock_bridge import NativeBridge, BridgeRejected, BridgeUnavailable
++from .unblock_owner import OwnerVault
++from .unblock_provider import UnblockProvider, WORKER_SCOPE
++from .unblock_resource import ResourceTokenHandler, parse_resource
++from .unblock_state import configured_store
++
++logger = structlog.getLogger(__name__)
++HEADERS = {
++    "Cache-Control": "no-store",
++    "Pragma": "no-cache",
++    "Referrer-Policy": "no-referrer",
++    "X-Content-Type-Options": "nosniff",
++    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
++}
++
++
++def cookie_name(consent_id):
++    return "__Host-unblock-" + consent_id
++
++
++def _error(
++    status,
++    text="Connection could not be authorized. Return to your client and reconnect. Pending work is preserved.",
++):
++    return HTMLResponse(
++        '<!doctype html><html lang="en"><meta charset="utf-8"><title>Unblock connection</title><main><h1>Unblock connection</h1><p>'
++        + escape(text)
++        + "</p></main></html>",
++        status_code=status,
++        headers=HEADERS,
++    )
++
++
++async def callback_response(request, provider):
++    items = list(request.query_params.multi_items())
++    if any(sum(key == name for key, _ in items) != 1 for name in ("code", "state")):
++        return _error(400)
++    try:
++        consent_id, secret = await provider.receive_callback(
++            request.query_params["code"], request.query_params["state"]
++        )
++        response = RedirectResponse(
++            provider.origin + "/unblock/consent/" + consent_id,
++            status_code=302,
++            headers=HEADERS,
++        )
++        response.set_cookie(
++            cookie_name(consent_id),
++            secret,
++            max_age=600,
++            secure=True,
++            httponly=True,
++            samesite="lax",
++            path="/",
++        )
++        return response
++    except BridgeRejected:
++        return _error(400)
++    except Exception:
++        return _error(
++            503,
++            "Authorization is unresolved. Start a new connection; prior pending state is retained.",
++        )
++
++
++def consent_html(snapshot, secret):
++    e = lambda value: escape(str(value), quote=True)
++    return (
++        """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Unblock Any Agent</title>
++<style>body{font:16px/1.55 system-ui,sans-serif;background:#f5f6f8;color:#18212b;margin:0;padding:32px 16px}main{max-width:640px;margin:auto;background:white;border:1px solid #dce1e7;border-radius:16px;padding:28px}h1{font-size:28px;line-height:1.2}dl{background:#f5f6f8;padding:16px;border-radius:8px;overflow-wrap:anywhere}dt{font-weight:650;margin-top:8px}dd{margin:0}label{display:block;font-weight:600;margin:18px 0 5px}input{box-sizing:border-box;width:100%;font:inherit;padding:10px;border:1px solid #8795a5;border-radius:6px}button{font:inherit;padding:11px 18px;border-radius:7px;border:1px solid #39465c;cursor:pointer;background:#263e70;color:white;margin:20px 8px 0 0}button[value=deny]{background:white;color:#263e70}.detail{font-size:14px;color:#475566}</style></head><body><main>
++<h1>Connect Unblock Any Agent</h1><p>Approve a worker on your dashboard for this client.</p><dl>
++<dt>Requesting client</dt><dd>"""
++        + e(snapshot["client_name"])
++        + """</dd><dt>Client ID</dt><dd>"""
++        + e(snapshot["client_id"])
++        + """</dd>
++<dt>Client callback</dt><dd>"""
++        + e(snapshot["redirect_uri"])
++        + """</dd><dt>Verified dashboard</dt><dd>"""
++        + e(snapshot["resource"])
++        + """</dd>
++<dt>Signed-in account ID</dt><dd>"""
++        + e(snapshot["subject"])
++        + '''</dd></dl>
++<p>The worker can request your help, recover its context and answers, record progress and expected updates, and retain action evidence. Its runtime performs approved work.</p>
++<p class="detail">Worker tokens last at most one hour. Connection renewal lasts up to 24 hours, subject to your Fulcra sign-in. When reconnecting, use the same agent ID and environment to recover work.</p>
++<form method="post"><input type="hidden" name="csrf" value="'''
++        + e(secret)
++        + """">
++<label for="agent">Agent ID</label><input id="agent" name="agent" required maxlength="100" pattern="[a-z0-9][a-z0-9-]{0,99}" placeholder="research-agent" autocomplete="off">
++<label for="environment">Environment</label><input id="environment" name="environment" required maxlength="100" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,99}" placeholder="chatgpt-work" autocomplete="off">
++<label for="name">Display name</label><input id="name" name="name" required maxlength="100" placeholder="Research worker" autocomplete="off">
++<button type="submit" name="decision" value="approve">Connect worker</button><button type="submit" name="decision" value="deny" formnovalidate>Decline</button></form></main></body></html>"""
++    )
++
++
++class BodyLimitMiddleware:
++    def __init__(self, app):
++        self.app = app
++
++    async def __call__(self, scope, receive, send):
++        if scope["type"] != "http":
++            await self.app(scope, receive, send)
++            return
++        if len(scope.get("query_string", b"")) > 8192:
++            await JSONResponse(
++                {"error": "invalid_request"}, status_code=414, headers=HEADERS
++            )(scope, receive, send)
++            return
++        if scope["method"] != "POST":
++            await self.app(scope, receive, send)
++            return
++        chunks = []
++        size = 0
++        while True:
++            message = await receive()
++            if message["type"] != "http.request":
++                await JSONResponse(
++                    {"error": "invalid_request"}, status_code=400, headers=HEADERS
++                )(scope, receive, send)
++                return
++            chunk = message.get("body", b"")
++            size += len(chunk)
++            if size > 65536:
++                await JSONResponse(
++                    {"error": "invalid_request"}, status_code=413, headers=HEADERS
++                )(scope, receive, send)
++                return
++            chunks.append(chunk)
++            if not message.get("more_body", False):
++                break
++        body = b"".join(chunks)
++        delivered = False
++
++        async def replay():
++            nonlocal delivered
++            if not delivered:
++                delivered = True
++                return {"type": "http.request", "body": body, "more_body": False}
++            return await receive()
++
++        await self.app(scope, replay, send)
++
++
++class _OptionalRevocationSecret:
++    """Normalize the pinned SDK's required nullable form field.
++
++    The SDK still authenticates the registered client and checks token ownership.
++    An empty default supplies no authority for confidential clients.
++    """
++
++    def __init__(self, request):
++        self.request = request
++
++    def __getattr__(self, name):
++        return getattr(self.request, name)
++
++    async def form(self):
++        form = await self.request.form()
++        if "client_secret" in form:
++            return form
++        return FormData([*form.multi_items(), ("client_secret", "")])
++
++
++def create_unblock_routes(provider):
++    registration = ClientRegistrationOptions(
++        enabled=True, valid_scopes=[WORKER_SCOPE], default_scopes=[WORKER_SCOPE]
++    )
++    revocation = RevocationOptions(enabled=True)
++    issuer = AnyHttpUrl(provider.origin + "/unblock")
++    routes = create_auth_routes(
++        provider,
++        issuer,
++        client_registration_options=registration,
++        revocation_options=revocation,
++    )
++
++    async def authorize(request):
++        items = (
++            list(request.query_params.multi_items())
++            if request.method == "GET"
++            else list((await request.form()).multi_items())
++        )
++        try:
++            parse_resource(items)
++        except TokenError:
++            return JSONResponse(
++                {"error": "invalid_request"}, status_code=400, headers=HEADERS
++            )
++        return await AuthorizationHandler(provider).handle(request)
++
++    handler = ResourceTokenHandler(provider, ClientAuthenticator(provider))
++    revoker = RevocationHandler(provider, ClientAuthenticator(provider))
++
++    async def revoke(request):
++        return await revoker.handle(_OptionalRevocationSecret(request))
++
++    routes = [
++        Route("/authorize", authorize, methods=["GET", "POST"])
++        if route.path == "/authorize"
++        else Route(
++            "/token",
++            cors_middleware(handler.handle, ["POST", "OPTIONS"]),
++            methods=["POST", "OPTIONS"],
++        )
++        if route.path == "/token"
++        else Route(
++            "/revoke",
++            cors_middleware(revoke, ["POST", "OPTIONS"]),
++            methods=["POST", "OPTIONS"],
++        )
++        if route.path == "/revoke"
++        else route
++        for route in routes
++    ]
++
++    async def consent(request):
++        consent_id = request.path_params["consent_id"]
++        secret = request.cookies.get(cookie_name(consent_id), "")
++        try:
++            if request.method == "GET":
++                snapshot = await provider.consent_snapshot(consent_id, secret)
++                return HTMLResponse(consent_html(snapshot, secret), headers=HEADERS)
++            if request.headers.get("origin") != provider.origin:
++                return _error(403)
++            if not request.headers.get("content-type", "").startswith(
++                "application/x-www-form-urlencoded"
++            ):
++                return _error(415)
++            form = await request.form()
++            items = list(form.multi_items())
++            allowed = {"csrf", "decision", "agent", "environment", "name"}
++            if any(key not in allowed for key, _ in items) or any(
++                sum(key == name for key, _ in items) > 1 for name in allowed
++            ):
++                return _error(400)
++            csrf = form.get("csrf")
++            if (
++                not isinstance(csrf, str)
++                or not secret
++                or not hmac.compare_digest(csrf, secret)
++            ):
++                return _error(403)
++            if form.get("decision") == "approve":
++                target = await provider.approve_consent(
++                    consent_id,
++                    secret,
++                    agent=form.get("agent"),
++                    environment=form.get("environment"),
++                    name=form.get("name"),
++                )
++            elif form.get("decision") == "deny":
++                target = await provider.decline_consent(consent_id, secret)
++            else:
++                return _error(400)
++            response = RedirectResponse(target, status_code=302, headers=HEADERS)
++            response.delete_cookie(
++                cookie_name(consent_id),
++                path="/",
++                secure=True,
++                httponly=True,
++                samesite="lax",
++            )
++            return response
++        except BridgeRejected:
++            return _error(400)
++        except Exception:
++            return _error(
++                503,
++                "Authorization is unresolved. Pending state is retained; return to the client and reconnect.",
++            )
++
++    routes.append(Route("/consent/{consent_id}", consent, methods=["GET", "POST"]))
++
++    async def unavailable(request, exc):
++        return JSONResponse(
++            {
++                "error": "server_error",
++                "error_description": "Authorization source unavailable; pending state retained",
++            },
++            status_code=503,
++            headers=HEADERS,
++        )
++
++    async def rejected(request, exc):
++        return JSONResponse(
++            {"error": "invalid_grant"}, status_code=400, headers=HEADERS
++        )
++
++    subapp = Starlette(
++        routes=routes,
++        middleware=[Middleware(BodyLimitMiddleware)],
++        exception_handlers={BridgeUnavailable: unavailable, BridgeRejected: rejected},
++    )
++    metadata = build_metadata(issuer, None, registration, revocation)
++    discovery = Route(
++        "/.well-known/oauth-authorization-server/unblock",
++        cors_middleware(MetadataHandler(metadata).handle, ["GET", "OPTIONS"]),
++        methods=["GET", "OPTIONS"],
++    )
++    return [discovery, Mount("/unblock", app=subapp)]
++
++
++def optional_provider():
++    if not settings.unblock_enabled:
++        return None
++    if not settings.unblock_allow_owned_resources and not settings.unblock_resources:
++        logger.warning("unblock_issuer_disabled_missing_resource_policy")
++        return None
++    if not all(
++        [
++            settings.state_bucket,
++            settings.oidc_client_id,
++            settings.fulcra_oidc_domain,
++            settings.fulcra_api,
++        ]
++    ):
++        logger.warning("unblock_issuer_disabled_missing_existing_service_configuration")
++        return None
++    try:
++        store = configured_store()
++        return UnblockProvider(
++            store,
++            NativeBridge(settings.fulcra_api),
++            OwnerVault(store),
++            issuer_origin=settings.oidc_server_url,
++            allowed_resources=None
++            if settings.unblock_allow_owned_resources
++            else settings.unblock_resources,
++        )
++    except Exception:
++        logger.warning("unblock_issuer_disabled_configuration_unavailable")
++        return None
+diff --git a/fulcra_mcp/unblock_owner.py b/fulcra_mcp/unblock_owner.py
+new file mode 100644
+index 0000000..12eb108
+--- /dev/null
++++ b/fulcra_mcp/unblock_owner.py
+@@ -0,0 +1,252 @@
++"""Private owner credential custody and one-time upstream refresh claims."""
++
++import asyncio
++import hashlib
++import secrets
++import time
++
++from fulcra_api.core import FulcraAPI
++from fulcra_api.credentials import FulcraCredentials
++
++from .settings import settings
++from .unblock_bridge import OwnerAccess, BridgeRejected, BridgeUnavailable
++from .unblock_state import StateStore, StateConflict, state_key
++
++OWNER_SESSION_SECONDS = 86400
++
++
++async def refresh_owner(credentials):
++    def perform():
++        api = FulcraAPI(
++            oidc_client_id=settings.oidc_client_id,
++            oidc_domain=settings.fulcra_oidc_domain,
++            oidc_audience=settings.fulcra_api,
++            credentials=credentials,
++        )
++        if not api.refresh_access_token() or api.fulcra_credentials is None:
++            raise BridgeUnavailable("upstream refresh outcome unavailable")
++        return api.fulcra_credentials
++
++    return await asyncio.to_thread(perform)
++
++
++class OwnerVault:
++    def __init__(self, store: StateStore, *, refresh=refresh_owner, now=time.time):
++        self.store, self.refresh, self.now = store, refresh, now
++
++    async def _read(self, key):
++        try:
++            observed = await asyncio.to_thread(self.store.read, key)
++        except Exception:
++            raise BridgeUnavailable("owner credential source unavailable") from None
++        if observed is None:
++            raise BridgeUnavailable("owner credential record unavailable")
++        row, generation = observed
++        if (
++            not isinstance(row.get("subject"), str)
++            or not row["subject"]
++            or type(row.get("expires_at")) is not int
++            or type(row.get("revision")) is not int
++            or row.get("refresh_state")
++            not in ("ready", "claimed", "uncertain", "revoked")
++            or type(row.get("revoked")) is not bool
++            or type(row.get("revocation_requested")) is not bool
++        ):
++            raise BridgeUnavailable("owner credential source malformed")
++        return row, generation
++
++    def _credentials(self, row):
++        try:
++            credentials = FulcraCredentials.from_json(row["credentials"])
++            if (
++                not credentials.access_token
++                or credentials.access_token_expiration is None
++            ):
++                raise ValueError("missing access")
++            expiry = int(credentials.access_token_expiration.timestamp())
++            return credentials, expiry
++        except Exception:
++            raise BridgeUnavailable("owner credentials malformed") from None
++
++    async def save(self, credentials, subject, expires_at, *, key=None):
++        if (
++            not isinstance(subject, str)
++            or not subject
++            or len(subject) > 200
++            or type(expires_at) is not int
++            or not self.now() < expires_at <= self.now() + OWNER_SESSION_SECONDS
++        ):
++            raise BridgeRejected("invalid bounded owner session")
++        serialized = credentials.to_json()
++        _, access_expiry = self._credentials({"credentials": serialized})
++        if access_expiry <= self.now():
++            raise BridgeRejected("owner authentication expired")
++        key = key or state_key("owner", secrets.token_urlsafe(32))
++        if not isinstance(key, str) or not key.startswith("owner/"):
++            raise BridgeRejected("invalid frozen owner reference")
++        row = {
++            "subject": subject,
++            "expires_at": expires_at,
++            "revision": 0,
++            "credentials": serialized,
++            "refresh_state": "ready",
++            "refresh_claim": None,
++            "last_refresh_claim": None,
++            "revoked": False,
++            "revocation_requested": False,
++            "refresh_history": [],
++        }
++        try:
++            await asyncio.to_thread(self.store.create, key, row)
++        except Exception:
++            # The caller may freeze this reference before the effect. A lost
++            # conditional-create response is accepted only after exact readback.
++            observed, _ = await self._read(key)
++            if observed != row:
++                raise BridgeUnavailable(
++                    "owner credential persistence unresolved"
++                ) from None
++        return key
++
++    async def _flag(self, key, **changes):
++        for _ in range(5):
++            row, generation = await self._read(key)
++            updated = {**row, **changes}
++            try:
++                await asyncio.to_thread(self.store.replace, key, updated, generation)
++                return
++            except StateConflict:
++                continue
++            except Exception:
++                raise BridgeUnavailable(
++                    "owner credential transition unavailable"
++                ) from None
++        raise BridgeUnavailable("owner credential transition conflicted")
++
++    async def request_revocation(self, key):
++        await self._flag(key, revocation_requested=True)
++
++    async def disable(self, key):
++        # Only the controller calls this after grant revocation readback, or
++        # after declining a flow which has issued no native grant.
++        await self._flag(
++            key,
++            revocation_requested=True,
++            revoked=True,
++            credentials=None,
++            refresh_state="revoked",
++        )
++
++    async def _uncertain(self, key, claim_id):
++        for _ in range(3):
++            try:
++                row, generation = await self._read(key)
++                if row.get("refresh_claim") != claim_id or row["revoked"]:
++                    return
++                updated = {**row, "refresh_state": "uncertain"}
++                await asyncio.to_thread(self.store.replace, key, updated, generation)
++                return
++            except StateConflict:
++                continue
++            except Exception:
++                # The durable claim already prevents another refresh. An
++                # unavailable uncertainty annotation cannot permit takeover.
++                return
++
++    async def _persist_refresh(self, key, claim_id, revision, credentials):
++        serialized = credentials.to_json()
++        for _ in range(5):
++            row, generation = await self._read(key)
++            if row["revoked"]:
++                raise BridgeRejected("owner session revoked")
++            if (
++                row.get("last_refresh_claim") == claim_id
++                and row["revision"] == revision + 1
++            ):
++                if row.get("credentials") != serialized:
++                    raise BridgeUnavailable("owner refresh receipts conflict")
++                return row
++            if row.get("refresh_claim") != claim_id or row["revision"] != revision:
++                raise BridgeUnavailable("owner refresh claim changed")
++            updated = {
++                **row,
++                "credentials": serialized,
++                "revision": revision + 1,
++                "refresh_state": "ready",
++                "refresh_claim": None,
++                "last_refresh_claim": claim_id,
++                "refresh_history": row.get("refresh_history", [])
++                + [
++                    {"claim_id": claim_id, "status": "completed", "at": int(self.now())}
++                ],
++            }
++            try:
++                await asyncio.to_thread(self.store.replace, key, updated, generation)
++                return updated
++            except StateConflict:
++                continue
++            except Exception:
++                # Re-read first: a lost conditional-write response may already
++                # have stored this exact refresh receipt. Never refresh again.
++                observed, _ = await self._read(key)
++                if (
++                    observed.get("last_refresh_claim") == claim_id
++                    and observed.get("credentials") == serialized
++                ):
++                    return observed
++                raise BridgeUnavailable(
++                    "owner refresh persistence unresolved"
++                ) from None
++        raise BridgeUnavailable("owner refresh persistence conflicted")
++
++    async def load(self, key, *, for_revocation=False, allow_refresh=True):
++        row, generation = await self._read(key)
++        if row["revoked"] or row["expires_at"] <= self.now():
++            raise BridgeRejected("owner session ended")
++        if row["revocation_requested"] and not for_revocation:
++            raise BridgeRejected("owner session revocation requested")
++        if row["refresh_state"] != "ready":
++            raise BridgeUnavailable("upstream refresh unresolved; reconnect required")
++        credentials, expiry = self._credentials(row)
++        if expiry - self.now() > 120 or (
++            (for_revocation or not allow_refresh) and expiry > self.now()
++        ):
++            return OwnerAccess(credentials.access_token, min(expiry, row["expires_at"]))
++        if not allow_refresh or for_revocation or not credentials.refresh_token:
++            raise BridgeRejected("owner reconnect required")
++        claim_id = secrets.token_urlsafe(32)
++        claimed = {
++            **row,
++            "refresh_state": "claimed",
++            "refresh_claim": claim_id,
++            "refresh_intent": {
++                "claim_id": claim_id,
++                "revision": row["revision"],
++                "credential_sha256": hashlib.sha256(
++                    row["credentials"].encode()
++                ).hexdigest(),
++                "at": int(self.now()),
++            },
++        }
++        try:
++            await asyncio.to_thread(self.store.replace, key, claimed, generation)
++        except Exception:
++            raise BridgeUnavailable("upstream refresh claim unresolved") from None
++        try:
++            replacement = await self.refresh(credentials)
++            _, new_expiry = self._credentials({"credentials": replacement.to_json()})
++            if new_expiry <= self.now() + 120:
++                raise BridgeUnavailable("upstream refresh receipt unusable")
++        except Exception:
++            await self._uncertain(key, claim_id)
++            raise BridgeUnavailable(
++                "upstream refresh outcome unknown; reconnect required"
++            ) from None
++        updated = await self._persist_refresh(
++            key, claim_id, row["revision"], replacement
++        )
++        if updated["revocation_requested"] and not for_revocation:
++            raise BridgeRejected("owner session revocation requested")
++        return OwnerAccess(
++            replacement.access_token, min(new_expiry, updated["expires_at"])
++        )
+diff --git a/fulcra_mcp/unblock_provider.py b/fulcra_mcp/unblock_provider.py
+new file mode 100644
+index 0000000..d3bcc06
+--- /dev/null
++++ b/fulcra_mcp/unblock_provider.py
+@@ -0,0 +1,858 @@
++"""An isolated, optional OAuth issuer branch for one approved native worker.
++
++This module neither mounts routes nor discovers credentials at import. The
++original Fulcra OAuth provider and its token namespace remain independent.
++"""
++
++import asyncio
++import base64
++import hashlib
++import hmac
++import re
++import secrets
++import time
++from dataclasses import asdict
++from urllib.parse import urlsplit
++
++from fulcra_api.core import FulcraAPI
++from mcp.server.auth.provider import (
++    AccessToken,
++    AuthorizationCode,
++    AuthorizeError,
++    RefreshToken,
++    RegistrationError,
++    TokenError,
++    construct_redirect_uri,
++)
++from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
++from pydantic import AnyUrl
++from .unblock_resource import parse_resource
++
++from .settings import settings
++from .unblock_bridge import (
++    OwnerAccess,
++    ProjectBinding,
++    NativeGrantReceipt,
++    BridgeRejected,
++    BridgeUnavailable,
++)
++from .unblock_owner import OWNER_SESSION_SECONDS
++from .unblock_state import Transactions, StateConflict, state_key
++
++WORKER_SCOPE = "unblock:worker"
++LOGIN_SECONDS = 600
++CODE_SECONDS = 120
++REFRESH_RETRY_SECONDS = 120
++
++
++class ResourceRefreshToken(RefreshToken):
++    resource: str
++
++
++def _resource(value):
++    try:
++        parts = urlsplit(value)
++        if (
++            not isinstance(value, str)
++            or len(value) > 2048
++            or parts.scheme != "https"
++            or not re.fullmatch(
++                r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.my\.fulcra\.ai",
++                parts.hostname or "",
++            )
++            or value != "https://" + parts.hostname + "/mcp"
++        ):
++            raise ValueError("not canonical")
++    except (TypeError, ValueError):
++        raise BridgeRejected(
++            "a canonical owned Fulcra dashboard resource is required"
++        ) from None
++    return value
++
++
++def upstream_api():
++    return FulcraAPI(
++        oidc_client_id=settings.oidc_client_id,
++        oidc_domain=settings.fulcra_oidc_domain,
++        oidc_audience=settings.fulcra_api,
++    )
++
++
++class UnblockProvider:
++    def __init__(
++        self,
++        store,
++        bridge,
++        vault,
++        *,
++        issuer_origin,
++        upstream_factory=upstream_api,
++        now=time.time,
++        allowed_resources=(),
++    ):
++        parts = urlsplit(issuer_origin)
++        if (
++            parts.scheme != "https"
++            or not parts.hostname
++            or parts.username
++            or parts.password
++            or parts.path not in ("", "/")
++            or parts.query
++            or parts.fragment
++            or parts.port not in (None, 443)
++        ):
++            raise ValueError("trusted HTTPS issuer origin required")
++        self.store, self.bridge, self.vault = store, bridge, vault
++        self.origin, self.now = issuer_origin.rstrip("/"), now
++        self.upstream_factory = upstream_factory
++        self.allowed_resources = (
++            None
++            if allowed_resources is None
++            else frozenset(_resource(value) for value in allowed_resources)
++        )
++        self.transactions = Transactions(store, now=now)
++
++    async def _read(self, key):
++        try:
++            return await asyncio.to_thread(self.store.read, key)
++        except Exception:
++            raise BridgeUnavailable("authorization state unavailable") from None
++
++    async def _required(self, key):
++        observed = await self._read(key)
++        if observed is None:
++            raise BridgeRejected("authorization transaction not found")
++        return observed
++
++    async def _create(self, key, value):
++        try:
++            await asyncio.to_thread(self.store.create, key, value)
++        except Exception:
++            observed = await self._read(key)
++            if observed is None or observed[0] != value:
++                raise BridgeUnavailable(
++                    "authorization state publication unresolved"
++                ) from None
++
++    async def _begin(self, key, binding, expiry):
++        try:
++            await asyncio.to_thread(self.transactions.begin, key, binding, expiry)
++        except Exception:
++            observed = await self._read(key)
++            if (
++                observed is None
++                or observed[0].get("binding") != binding
++                or observed[0].get("expires_at") != expiry
++                or observed[0].get("status") != "pending"
++            ):
++                raise BridgeUnavailable(
++                    "authorization transaction publication unresolved"
++                ) from None
++
++    async def _checkpoint(self, key, claim, name, value):
++        try:
++            await asyncio.to_thread(
++                self.transactions.checkpoint, key, claim, name, value
++            )
++        except Exception:
++            row, _ = await self._required(key)
++            if (
++                row.get("claim_id") != claim
++                or row.get("checkpoints", {}).get(name) != value
++            ):
++                raise BridgeUnavailable(
++                    "authorization effect checkpoint unresolved"
++                ) from None
++
++    async def _finish(self, key, claim, status, result):
++        try:
++            return await asyncio.to_thread(
++                self.transactions.finish, key, claim, status, result
++            )
++        except Exception:
++            observed = await self._read(key)
++            if (
++                observed is not None
++                and observed[0].get("claim_id") == claim
++                and observed[0].get("status") == status
++                and observed[0].get("result") == result
++            ):
++                return observed
++            raise BridgeUnavailable(
++                "authorization outcome publication unresolved"
++            ) from None
++
++    async def _uncertain(self, key, claim, phase):
++        try:
++            await self._finish(
++                key,
++                claim,
++                "uncertain",
++                {"phase": phase, "recovery": "exact source reconciliation required"},
++            )
++        except Exception:
++            pass  # A retained claim already prevents repetition.
++
++    async def get_client(self, client_id):
++        observed = await self._read(state_key("client", client_id))
++        if observed is None:
++            return None
++        try:
++            return OAuthClientInformationFull.model_validate(observed[0]["client"])
++        except Exception:
++            raise BridgeUnavailable("registered client state unavailable") from None
++
++    async def register_client(self, client_info):
++        if not client_info.client_id:
++            raise RegistrationError(
++                "invalid_client_metadata", "client identifier required"
++            )
++        try:
++            await self._create(
++                state_key("client", client_info.client_id),
++                {"client": client_info.model_dump(mode="json")},
++            )
++        except Exception:
++            raise RegistrationError(
++                "invalid_client_metadata", "client registration persistence unavailable"
++            ) from None
++
++    async def authorize(self, client, params):
++        try:
++            resource = _resource(params.resource)
++            if (
++                self.allowed_resources is not None
++                and resource not in self.allowed_resources
++            ):
++                raise BridgeRejected("resource is outside this rollout")
++            if (
++                params.scopes != [WORKER_SCOPE]
++                or not re.fullmatch(r"[A-Za-z0-9_-]{43}", params.code_challenge)
++                or (params.state is not None and len(params.state) > 4096)
++            ):
++                raise BridgeRejected("invalid worker authorization request")
++            state = "uaa-login-" + secrets.token_hex(32)
++            binding = {
++                "client_id": client.client_id,
++                "client_name": client.client_name or client.client_id,
++                "redirect_uri": str(params.redirect_uri),
++                "redirect_explicit": params.redirect_uri_provided_explicitly,
++                "client_state": params.state,
++                "challenge": params.code_challenge,
++                "resource": resource,
++                "scopes": [WORKER_SCOPE],
++            }
++            await self._begin(
++                state_key("login", state), binding, int(self.now()) + LOGIN_SECONDS
++            )
++            api = self.upstream_factory()
++            return await asyncio.to_thread(
++                api.get_authorization_code_url,
++                redirect_uri=self.origin + "/callback",
++                state=state,
++            )
++        except Exception:
++            raise AuthorizeError(
++                "invalid_request", "worker authorization could not start"
++            ) from None
++
++    @staticmethod
++    def owns_state(state):
++        return (
++            isinstance(state, str)
++            and re.fullmatch(r"uaa-login-[a-f0-9]{64}", state) is not None
++        )
++
++    async def receive_callback(self, upstream_code, state):
++        if (
++            not self.owns_state(state)
++            or not isinstance(upstream_code, str)
++            or not upstream_code
++            or len(upstream_code) > 4096
++        ):
++            raise BridgeRejected("invalid login callback")
++        key, claim = state_key("login", state), secrets.token_hex(16)
++        try:
++            row, _ = await asyncio.to_thread(self.transactions.claim, key, claim)
++        except StateConflict:
++            raise BridgeRejected(
++                "login already processed or expired; reconnect"
++            ) from None
++        except Exception:
++            raise BridgeUnavailable("login claim unavailable") from None
++        try:
++            api = self.upstream_factory()
++            await asyncio.to_thread(
++                api.authorize_with_authorization_code,
++                code=upstream_code,
++                redirect_uri=self.origin + "/callback",
++            )
++            credentials = api.fulcra_credentials
++            access = OwnerAccess(
++                credentials.access_token,
++                int(credentials.access_token_expiration.timestamp()),
++            )
++            project = await self.bridge.find_project(access, row["binding"]["resource"])
++            session_expiry = int(self.now()) + OWNER_SESSION_SECONDS
++            if credentials.refresh_token_expiration is not None:
++                session_expiry = min(
++                    session_expiry,
++                    int(credentials.refresh_token_expiration.timestamp()),
++                )
++            owner_key = state_key("owner", state)
++            await self._checkpoint(
++                key,
++                claim,
++                "owner_reference",
++                {"key": owner_key, "subject": project.subject},
++            )
++            await self.vault.save(
++                credentials, project.subject, session_expiry, key=owner_key
++            )
++            consent_id, secret = secrets.token_hex(32), secrets.token_urlsafe(32)
++            binding = {
++                **row["binding"],
++                "owner_key": owner_key,
++                "session_expires_at": session_expiry,
++                "project": asdict(project),
++                "csrf_sha256": hashlib.sha256(secret.encode()).hexdigest(),
++            }
++            await self._begin(
++                state_key("consent", consent_id),
++                binding,
++                int(self.now()) + LOGIN_SECONDS,
++            )
++            await self._finish(
++                key,
++                claim,
++                "completed",
++                {"consent_key": state_key("consent", consent_id)},
++            )
++            return consent_id, secret
++        except Exception:
++            await self._uncertain(key, claim, "upstream_login_or_owner_lookup")
++            raise BridgeUnavailable(
++                "login outcome unresolved; start a new connection"
++            ) from None
++
++    async def _consent(self, consent_id, secret):
++        if (
++            not isinstance(consent_id, str)
++            or not re.fullmatch(r"[a-f0-9]{64}", consent_id)
++            or not isinstance(secret, str)
++            or len(secret) > 200
++        ):
++            raise BridgeRejected("invalid consent proof")
++        key = state_key("consent", consent_id)
++        row, _ = await self._required(key)
++        expected = row["binding"].get("csrf_sha256")
++        if (
++            not isinstance(expected, str)
++            or not hmac.compare_digest(
++                hashlib.sha256(secret.encode()).hexdigest(), expected
++            )
++            or row["status"] != "pending"
++            or row["expires_at"] <= self.now()
++        ):
++            raise BridgeRejected("consent is unavailable, expired or already processed")
++        return key, row
++
++    async def consent_snapshot(self, consent_id, secret):
++        _, row = await self._consent(consent_id, secret)
++        binding = row["binding"]
++        project = binding["project"]
++        return {
++            "client_id": binding["client_id"],
++            "client_name": binding["client_name"],
++            "redirect_uri": binding["redirect_uri"],
++            "resource": binding["resource"],
++            "subject": project["subject"],
++            "project_id": project["project_id"],
++            "expires_at": row["expires_at"],
++            "session_expires_at": binding["session_expires_at"],
++        }
++
++    async def approve_consent(self, consent_id, secret, *, agent, environment, name):
++        key, row = await self._consent(consent_id, secret)
++        binding = row["binding"]
++        owner = await self.vault.load(binding["owner_key"], allow_refresh=False)
++        project = await self.bridge.resolve_owned_project(
++            owner,
++            binding["project"]["project_id"],
++            binding["resource"],
++            agent,
++            environment,
++            name,
++        )
++        if project.subject != binding["project"]["subject"]:
++            raise BridgeRejected("consent owner changed")
++        claim = secrets.token_hex(16)
++        try:
++            await asyncio.to_thread(self.transactions.claim, key, claim)
++        except StateConflict:
++            raise BridgeRejected("consent already processed") from None
++        code = "uaa-code-" + secrets.token_hex(32)
++        code_key = state_key("code", code)
++        code_binding = {
++            k: binding[k]
++            for k in (
++                "client_id",
++                "redirect_uri",
++                "redirect_explicit",
++                "challenge",
++                "scopes",
++                "resource",
++                "owner_key",
++                "session_expires_at",
++            )
++        }
++        code_binding.update(project=asdict(project), root_code_key=code_key)
++        try:
++            await self._checkpoint(
++                key,
++                claim,
++                "authorization_code",
++                {"code": code, "binding": code_binding},
++            )
++            await self._begin(
++                code_key,
++                code_binding,
++                min(int(self.now()) + CODE_SECONDS, binding["session_expires_at"]),
++            )
++            await self._finish(key, claim, "completed", {"code_key": code_key})
++        except Exception:
++            await self._uncertain(key, claim, "authorization_code_publication")
++            raise BridgeUnavailable(
++                "approved connection publication unresolved"
++            ) from None
++        return construct_redirect_uri(
++            binding["redirect_uri"], code=code, state=binding["client_state"]
++        )
++
++    async def decline_consent(self, consent_id, secret):
++        key, row = await self._consent(consent_id, secret)
++        claim = secrets.token_hex(16)
++        try:
++            await asyncio.to_thread(self.transactions.claim, key, claim)
++        except StateConflict:
++            raise BridgeRejected("consent already processed") from None
++        await self.vault.disable(row["binding"]["owner_key"])
++        await self._finish(key, claim, "completed", {"denied": True})
++        return construct_redirect_uri(
++            row["binding"]["redirect_uri"],
++            error="access_denied",
++            state=row["binding"]["client_state"],
++        )
++
++    async def load_authorization_code(self, client, authorization_code):
++        if not isinstance(authorization_code, str) or not re.fullmatch(
++            r"uaa-code-[a-f0-9]{64}", authorization_code
++        ):
++            return None
++        observed = await self._read(state_key("code", authorization_code))
++        if observed is None or observed[0]["binding"]["client_id"] != client.client_id:
++            return None
++        row = observed[0]
++        binding = row["binding"]
++        return AuthorizationCode(
++            code=authorization_code,
++            client_id=binding["client_id"],
++            scopes=binding["scopes"],
++            expires_at=row["expires_at"],
++            code_challenge=binding["challenge"],
++            redirect_uri=binding["redirect_uri"],
++            redirect_uri_provided_explicitly=binding["redirect_explicit"],
++            resource=binding["resource"],
++            subject=binding["project"]["subject"],
++        )
++
++    async def observe_code_replay(self, client, code, form_items):
++        row, _ = await self._required(state_key("code", code.code))
++        if row["status"] == "pending":
++            return
++        binding = row["binding"]
++        proof_fields = (
++            "client_id",
++            "code",
++            "code_verifier",
++            "redirect_uri",
++            "resource",
++        )
++        if any(sum(key == name for key, _ in form_items) > 1 for name in proof_fields):
++            return
++        form = dict(form_items)
++        try:
++            resource = parse_resource(form_items)
++            verifier = form["code_verifier"]
++            challenge = (
++                base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
++                .decode()
++                .rstrip("=")
++            )
++            supplied_redirect = (
++                str(AnyUrl(form["redirect_uri"]))
++                if form.get("redirect_uri") is not None
++                else None
++            )
++            expected_redirect = (
++                binding["redirect_uri"] if binding["redirect_explicit"] else None
++            )
++            valid = (
++                client.client_id == binding["client_id"] == form.get("client_id")
++                and form.get("code") == code.code
++                and resource == binding["resource"]
++                and supplied_redirect == expected_redirect
++                and hmac.compare_digest(challenge, binding["challenge"])
++            )
++        except Exception:
++            return
++        if valid:
++            await self._request_revocation(binding["root_code_key"])
++
++    async def _active(self, root, *, initial=False):
++        row, _ = await self._required(root)
++        if row.get("revocation_requested"):
++            await self.recover_pending_code(root)
++            raise TokenError("invalid_grant", "connection revocation is requested")
++        if row["status"] != "completed" and not (
++            initial and row["status"] == "claimed"
++        ):
++            raise TokenError("invalid_grant", "connection is not active")
++
++    def _replacement(self, row):
++        checkpoints = row["checkpoints"]
++        receipt, refresh = checkpoints["native_receipt"], checkpoints["refresh_token"]
++        return OAuthToken(
++            access_token=receipt["credential"],
++            token_type="Bearer",
++            expires_in=max(0, receipt["expires_at"] - int(self.now())),
++            scope=WORKER_SCOPE,
++            refresh_token=refresh["token"],
++        )
++
++    async def _materialize(self, key, claim, binding, receipt, *, initial):
++        root = binding["root_code_key"]
++        await self._active(root, initial=initial)
++        row, _ = await self._required(key)
++        token_intent = row["checkpoints"].get("refresh_token")
++        if token_intent is None:
++            raw = "uaa-refresh-" + secrets.token_hex(32)
++            token_intent = {
++                "token": raw,
++                "key": state_key("refresh", raw),
++                "expires_at": binding["session_expires_at"],
++            }
++            await self._checkpoint(key, claim, "refresh_token", token_intent)
++        timing = row["checkpoints"].get("response_timing") or {
++            "issued_at": int(self.now())
++        }
++        await self._checkpoint(key, claim, "response_timing", timing)
++        refresh_binding = {
++            k: binding[k]
++            for k in (
++                "client_id",
++                "scopes",
++                "resource",
++                "owner_key",
++                "session_expires_at",
++                "project",
++                "root_code_key",
++            )
++        }
++        refresh_binding["current_grant_id"] = receipt.grant_id
++        await self._begin(
++            token_intent["key"], refresh_binding, token_intent["expires_at"]
++        )
++        metadata = {
++            "client_id": binding["client_id"],
++            "resource": binding["resource"],
++            "subject": binding["project"]["subject"],
++            "scopes": binding["scopes"],
++            "root_code_key": root,
++            "grant_id": receipt.grant_id,
++            "expires_at": receipt.expires_at,
++        }
++        access_key = state_key("access", receipt.credential)
++        await self._create(access_key, metadata)
++        await self._active(root, initial=initial)
++        result = {
++            "access_key": access_key,
++            "refresh_key": token_intent["key"],
++            "expires_at": receipt.expires_at,
++            "rotated_at": timing["issued_at"],
++        }
++        completed, _ = await self._finish(key, claim, "completed", result)
++        await self._active(root)
++        return self._replacement(completed)
++
++    async def exchange_authorization_code(self, client, authorization_code):
++        key = state_key("code", authorization_code.code)
++        row, _ = await self._required(key)
++        if (
++            row["binding"]["client_id"] != client.client_id
++            or row["binding"]["resource"] != authorization_code.resource
++        ):
++            raise TokenError("invalid_grant", "authorization binding does not match")
++        if row["status"] != "pending":
++            await self._request_revocation(key)
++            raise TokenError("invalid_grant", "authorization code already consumed")
++        claim = secrets.token_hex(16)
++        try:
++            await asyncio.to_thread(self.transactions.claim, key, claim)
++        except StateConflict:
++            await self._request_revocation(key)
++            raise TokenError(
++                "invalid_grant", "authorization code already consumed"
++            ) from None
++        except Exception:
++            raise TokenError(
++                "invalid_grant", "authorization code claim unavailable"
++            ) from None
++        binding = row["binding"]
++        phase = "owner_access"
++        try:
++            await self._active(key, initial=True)
++            owner = await self.vault.load(binding["owner_key"])
++            project = ProjectBinding(**binding["project"])
++            intent = await self.bridge.prepare_enrollment(
++                project, owner, "uaa-enroll-" + secrets.token_hex(32)
++            )
++            await self._checkpoint(key, claim, "native_intent", intent)
++            await self._active(key, initial=True)
++            phase = "native_enrollment"
++            receipt = await self.bridge.enroll_worker(project, owner, intent)
++            await self._checkpoint(key, claim, "native_receipt", asdict(receipt))
++            phase = "token_publication"
++            return await self._materialize(key, claim, binding, receipt, initial=True)
++        except Exception:
++            await self._uncertain(key, claim, phase)
++            raise TokenError(
++                "invalid_grant",
++                "connection outcome is pending recovery; reconnect if requested",
++            ) from None
++
++    async def load_refresh_token(self, client, refresh_token):
++        if not isinstance(refresh_token, str) or not re.fullmatch(
++            r"uaa-refresh-[a-f0-9]{64}", refresh_token
++        ):
++            return None
++        observed = await self._read(state_key("refresh", refresh_token))
++        if observed is None:
++            return None
++        row = observed[0]
++        binding = row["binding"]
++        if binding["client_id"] != client.client_id:
++            return None
++        if (
++            row["status"] == "completed"
++            and self.now() > row["result"]["rotated_at"] + REFRESH_RETRY_SECONDS
++        ):
++            return None
++        return ResourceRefreshToken(
++            token=refresh_token,
++            client_id=client.client_id,
++            scopes=binding["scopes"],
++            expires_at=row["expires_at"],
++            resource=binding["resource"],
++        )
++
++    async def exchange_refresh_token(self, client, refresh_token, scopes):
++        key = state_key("refresh", refresh_token.token)
++        row, _ = await self._required(key)
++        binding = row["binding"]
++        root = binding["root_code_key"]
++        if binding["client_id"] != client.client_id or scopes != [WORKER_SCOPE]:
++            raise TokenError("invalid_scope", "worker scope cannot change")
++        await self._active(root)
++        if row["status"] == "completed":
++            if self.now() > row["result"]["rotated_at"] + REFRESH_RETRY_SECONDS:
++                raise TokenError("invalid_grant", "refresh retry window ended")
++            return self._replacement(row)
++        # Resume only the frozen native effect. Owner custody may supply known
++        # access, but recovery must never take over an upstream refresh.
++        if row["status"] in ("claimed", "uncertain"):
++            checkpoints = row.get("checkpoints", {})
++            try:
++                receipt_data = checkpoints.get("native_receipt")
++                if receipt_data is None:
++                    intent = checkpoints.get("native_intent")
++                    if (
++                        not intent
++                        or intent.get("renewal_of") != binding["current_grant_id"]
++                    ):
++                        raise BridgeUnavailable("renewal intent unavailable")
++                    owner = await self.vault.load(
++                        binding["owner_key"], allow_refresh=False
++                    )
++                    receipt = await self.bridge.reconcile_enrollment(
++                        ProjectBinding(**binding["project"]), owner, intent
++                    )
++                    if receipt is None:
++                        raise BridgeUnavailable("renewal receipt remains unknown")
++                    await self._active(root)
++                    await self._checkpoint(
++                        key, row["claim_id"], "native_receipt", asdict(receipt)
++                    )
++                else:
++                    receipt = NativeGrantReceipt(**receipt_data)
++                return await self._materialize(
++                    key, row["claim_id"], binding, receipt, initial=False
++                )
++            except Exception:
++                raise TokenError(
++                    "invalid_grant", "refresh recovery remains unresolved"
++                ) from None
++        if row["status"] != "pending":
++            raise TokenError("invalid_grant", "refresh effect is unresolved; reconnect")
++        claim = secrets.token_hex(16)
++        try:
++            await asyncio.to_thread(self.transactions.claim, key, claim)
++        except Exception:
++            raise TokenError("invalid_grant", "refresh claim unavailable") from None
++        phase = "owner_access"
++        try:
++            owner = await self.vault.load(binding["owner_key"])
++            project = ProjectBinding(**binding["project"])
++            intent = await self.bridge.prepare_enrollment(
++                project,
++                owner,
++                "uaa-renew-" + secrets.token_hex(32),
++                renewal_of=binding["current_grant_id"],
++            )
++            await self._checkpoint(key, claim, "native_intent", intent)
++            await self._active(root)
++            phase = "native_enrollment"
++            receipt = await self.bridge.enroll_worker(project, owner, intent)
++            await self._checkpoint(key, claim, "native_receipt", asdict(receipt))
++            phase = "token_publication"
++            return await self._materialize(key, claim, binding, receipt, initial=False)
++        except Exception:
++            await self._uncertain(key, claim, phase)
++            raise TokenError(
++                "invalid_grant",
++                "refresh outcome is pending recovery; reconnect if requested",
++            ) from None
++
++    async def load_access_token(self, token):
++        if not isinstance(token, str) or not token or len(token) > 20000:
++            return None
++        observed = await self._read(state_key("access", token))
++        if observed is None:
++            return None
++        row = observed[0]
++        # Metadata is used only by this branch's authenticated revocation
++        # handler. It is never inserted in the original MCP token namespace.
++        return AccessToken(
++            token=token,
++            client_id=row["client_id"],
++            scopes=row["scopes"],
++            expires_at=row["expires_at"],
++            resource=row["resource"],
++            subject=row["subject"],
++        )
++
++    async def revoke_token(self, token):
++        kind = "refresh" if isinstance(token, ResourceRefreshToken) else "access"
++        row, _ = await self._required(state_key(kind, token.token))
++        root = (
++            row["binding"]["root_code_key"]
++            if kind == "refresh"
++            else row["root_code_key"]
++        )
++        if not await self._request_revocation(root):
++            raise BridgeUnavailable("revocation remains pending source readback")
++
++    async def _request_revocation(self, root):
++        for _ in range(5):
++            row, generation = await self._required(root)
++            if row.get("revocation_requested"):
++                break
++            try:
++                await asyncio.to_thread(
++                    self.store.replace,
++                    root,
++                    {**row, "revocation_requested": True},
++                    generation,
++                )
++                break
++            except StateConflict:
++                continue
++            except Exception:
++                observed, _ = await self._required(root)
++                if not observed.get("revocation_requested"):
++                    raise BridgeUnavailable(
++                        "revocation request publication unresolved"
++                    ) from None
++                break
++        else:
++            raise BridgeUnavailable("revocation request conflicted")
++        await self.vault.request_revocation(row["binding"]["owner_key"])
++        return await self.recover_pending_code(root)
++
++    async def recover_pending_code(self, root):
++        """Private operator/replay recovery; never a public unauthenticated API."""
++        row, _ = await self._required(root)
++        if not row.get("revocation_requested"):
++            return False
++        binding, checkpoints = row["binding"], row.get("checkpoints", {})
++        cleanup_key = state_key("revoke", root)
++        cleanup = await self._read(cleanup_key)
++        if cleanup and cleanup[0]["status"] == "completed":
++            try:
++                await self.vault.disable(binding["owner_key"])
++                return True
++            except Exception:
++                return False
++        if not checkpoints.get("native_intent"):
++            await self.vault.disable(binding["owner_key"])
++            return True  # No native effect can precede its durable intent.
++        try:
++            owner = await self.vault.load(binding["owner_key"], for_revocation=True)
++            project = ProjectBinding(**binding["project"])
++            if cleanup is None:
++                receipt = (
++                    NativeGrantReceipt(**checkpoints["native_receipt"])
++                    if checkpoints.get("native_receipt")
++                    else await self.bridge.reconcile_enrollment(
++                        project, owner, checkpoints["native_intent"]
++                    )
++                )
++                if receipt is None:
++                    return False
++                frozen = {
++                    "owner_key": binding["owner_key"],
++                    "grant_id": receipt.grant_id,
++                    "intent_id": "uaa-revoke-" + root.split("/")[1],
++                    "project": binding["project"],
++                }
++                await self._begin(cleanup_key, frozen, int(self.now()) + LOGIN_SECONDS)
++                cleanup = await self._required(cleanup_key)
++            # Once revocation was frozen, its grant ID is the recovery source.
++            # Re-enrollment lookup can correctly deny an already revoked grant.
++            cleanup_row = cleanup[0]
++            frozen = cleanup_row["binding"]
++            if cleanup_row["status"] == "pending":
++                claim = secrets.token_hex(16)
++                await asyncio.to_thread(self.transactions.claim, cleanup_key, claim)
++                try:
++                    await self.bridge.revoke_worker(
++                        project, owner, frozen["grant_id"], frozen["intent_id"]
++                    )
++                except Exception:
++                    await self._uncertain(cleanup_key, claim, "native_revocation")
++            else:
++                claim = cleanup_row["claim_id"]
++            if not await self.bridge.revocation_observed(
++                project, owner, frozen["grant_id"]
++            ):
++                return False
++            await self._finish(
++                cleanup_key,
++                claim,
++                "completed",
++                {"grant_id": frozen["grant_id"], "source": "checked"},
++            )
++            await self.vault.disable(binding["owner_key"])
++            return True
++        except Exception:
++            return False  # The durable request/intent remains pending, never quiet.
+diff --git a/fulcra_mcp/unblock_resource.py b/fulcra_mcp/unblock_resource.py
+new file mode 100644
+index 0000000..7921d51
+--- /dev/null
++++ b/fulcra_mcp/unblock_resource.py
+@@ -0,0 +1,81 @@
++"""Resource checks for the isolated Unblock token branch.
++
++The provider behind this handler must return durable resource-bound codes and
++refresh records. Its load methods are read-only. Existing Fulcra OAuth clients
++keep their original handler; mounting this branch waits for that provider.
++"""
++
++from typing import Any
++
++from mcp.server.auth.handlers.token import TokenHandler
++from mcp.server.auth.provider import TokenError
++from starlette.requests import Request
++
++
++def parse_resource(form_items: list[tuple[str, str]]) -> str | None:
++    values = [value for key, value in form_items if key == "resource"]
++    if len(values) > 1:
++        raise TokenError("invalid_request", "resource must occur at most once")
++    if not values:
++        return None
++    value = values[0]
++    if not isinstance(value, str) or not value or value.strip() != value:
++        raise TokenError(
++            "invalid_request", "resource must be a nonempty exact identifier"
++        )
++    return value
++
++
++def require_resource(requested: str | None, bound: str, *, refresh: bool) -> str:
++    if not isinstance(bound, str) or not bound or bound.strip() != bound:
++        raise TokenError("invalid_grant", "resource binding unavailable")
++    if requested is None and refresh:
++        return bound
++    if requested != bound:
++        raise TokenError("invalid_grant", "resource does not match the grant")
++    return bound
++
++
++class _BoundExchanges:
++    """Per-request wrapper; no mutable request state on the shared provider."""
++
++    def __init__(self, provider: Any, request: Request):
++        self._provider = provider
++        self._request = request
++
++    def __getattr__(self, name: str):
++        return getattr(self._provider, name)
++
++    async def _check(self, record: Any, *, refresh: bool):
++        # The SDK has already authenticated and parsed this same Request. Its
++        # cached FormData retains duplicates discarded by dict(form_data).
++        form = await self._request.form()
++        requested = parse_resource(list(form.multi_items()))
++        require_resource(requested, getattr(record, "resource", None), refresh=refresh)
++
++    async def load_authorization_code(self, client, raw_code):
++        code = await self._provider.load_authorization_code(client, raw_code)
++        observer = getattr(self._provider, "observe_code_replay", None)
++        if code is not None and observer is not None:
++            # The SDK has authenticated the client. The observer independently
++            # checks redirect, PKCE and resource before revocation-only cleanup,
++            # including when the SDK would stop at an expired consumed code.
++            form = await self._request.form()
++            await observer(client, code, list(form.multi_items()))
++        return code
++
++    async def exchange_authorization_code(self, client, code):
++        await self._check(code, refresh=False)
++        return await self._provider.exchange_authorization_code(client, code)
++
++    async def exchange_refresh_token(self, client, token, scopes):
++        await self._check(token, refresh=True)
++        return await self._provider.exchange_refresh_token(client, token, scopes)
++
++
++class ResourceTokenHandler(TokenHandler):
++    async def handle(self, request: Request):
++        # Retain the SDK's client, redirect, PKCE, expiry and scope checks.
++        # A new wrapper for every request prevents concurrent caller leakage.
++        guarded = _BoundExchanges(self.provider, request)
++        return await TokenHandler(guarded, self.client_authenticator).handle(request)
+diff --git a/fulcra_mcp/unblock_state.py b/fulcra_mcp/unblock_state.py
+new file mode 100644
+index 0000000..579811a
+--- /dev/null
++++ b/fulcra_mcp/unblock_state.py
+@@ -0,0 +1,260 @@
++"""Separate resource state using GCS generation preconditions, never a mount.
++
++No credentials are discovered at import. Call configured_store only when the
++new resource branch is explicitly enabled with an existing authorized bucket.
++"""
++
++import hashlib
++import json
++import re
++import time
++from typing import Any
++
++from google.api_core.exceptions import NotFound, PreconditionFailed
++from google.cloud import storage
++from google.cloud.storage.retry import DEFAULT_RETRY_IF_GENERATION_SPECIFIED
++
++from .settings import settings
++
++MAX_RECORD_BYTES = 65536
++TIMEOUT_SECONDS = 15
++
++
++class StateConflict(Exception):
++    """The observed generation or transition no longer holds."""
++
++
++class StateUnavailable(Exception):
++    """Storage/effect state is unknown; this never means an empty queue."""
++
++
++class StateInvalid(ValueError):
++    """Invalid local key/value; no storage operation was performed."""
++
++
++def state_key(kind: str, secret: str) -> str:
++    if not isinstance(kind, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,39}", kind):
++        raise StateInvalid("invalid state kind")
++    if not isinstance(secret, str) or not secret:
++        raise StateInvalid("missing state identifier")
++    return kind + "/" + hashlib.sha256(secret.encode()).hexdigest()
++
++
++def _snapshot(value: dict) -> tuple[dict, bytes]:
++    if not isinstance(value, dict):
++        raise StateInvalid("state must be an object")
++    try:
++        raw = json.dumps(
++            value, sort_keys=True, separators=(",", ":"), allow_nan=False
++        ).encode()
++    except (ValueError, TypeError, OverflowError):
++        raise StateInvalid("invalid state data") from None
++    if len(raw) > MAX_RECORD_BYTES:
++        raise StateInvalid("state record too large")
++    return json.loads(raw), raw
++
++
++def _generation(value: Any) -> int:
++    if type(value) is int and value > 0:
++        return value
++    if isinstance(value, str) and re.fullmatch(r"[0-9]+", value) and int(value) > 0:
++        return int(value)
++    raise StateUnavailable("state generation unavailable")
++
++
++class StateStore:
++    def __init__(self, bucket):
++        if bucket is None:
++            raise StateUnavailable("resource state storage is not configured")
++        self._bucket = bucket
++
++    def _blob(self, key: str):
++        if not isinstance(key, str) or not re.fullmatch(
++            r"[a-z][a-z0-9_-]{0,39}/[a-f0-9]{64}", key
++        ):
++            raise StateInvalid("invalid state key")
++        return self._bucket.blob("unblock/v1/" + key)
++
++    def read(self, key: str) -> tuple[dict, int] | None:
++        blob = self._blob(key)
++        try:
++            blob.reload(timeout=TIMEOUT_SECONDS)
++        except NotFound:
++            try:
++                if self._bucket.exists(timeout=TIMEOUT_SECONDS):
++                    return None
++            except Exception:
++                pass
++            raise StateUnavailable("resource state bucket unavailable") from None
++        except Exception:
++            raise StateUnavailable("resource state read unavailable") from None
++        generation = _generation(blob.generation)
++        try:
++            raw = blob.download_as_bytes(
++                if_generation_match=generation,
++                timeout=TIMEOUT_SECONDS,
++                retry=DEFAULT_RETRY_IF_GENERATION_SPECIFIED,
++            )
++            if len(raw) > MAX_RECORD_BYTES:
++                raise ValueError("oversized")
++            value = json.loads(raw)
++            if not isinstance(value, dict):
++                raise ValueError("not an object")
++            # Reject malformed/nonfinite source rather than normalizing it away.
++            _snapshot(value)
++        except (PreconditionFailed, NotFound):
++            raise StateConflict("resource state changed during read") from None
++        except Exception:
++            raise StateUnavailable("resource state content unavailable") from None
++        return value, generation
++
++    def _write(self, key: str, value: dict, generation: int) -> int:
++        blob = self._blob(key)
++        _, raw = _snapshot(value)
++        try:
++            blob.upload_from_string(
++                raw,
++                content_type="application/json",
++                if_generation_match=generation,
++                timeout=TIMEOUT_SECONDS,
++                retry=DEFAULT_RETRY_IF_GENERATION_SPECIFIED,
++            )
++        except PreconditionFailed:
++            raise StateConflict("resource state generation changed") from None
++        except Exception:
++            # A timeout can follow a successful write. Preserve/reconcile the
++            # original transition; never report a definite no-effect failure.
++            raise StateUnavailable("resource state write outcome unavailable") from None
++        return _generation(blob.generation)
++
++    def create(self, key: str, value: dict) -> int:
++        return self._write(key, value, 0)
++
++    def replace(self, key: str, value: dict, generation: int) -> int:
++        if type(generation) is not int or generation <= 0:
++            raise StateInvalid("expected positive state generation")
++        return self._write(key, value, generation)
++
++
++def configured_store() -> StateStore:
++    bucket_name = settings.state_bucket
++    if (
++        not isinstance(bucket_name, str)
++        or not bucket_name
++        or bucket_name.strip() != bucket_name
++    ):
++        raise StateUnavailable("resource state bucket is not configured")
++    try:
++        return StateStore(storage.Client().bucket(bucket_name))
++    except Exception:
++        raise StateUnavailable("resource state client unavailable") from None
++
++
++class Transactions:
++    """One-time claims and explicit reconciliation; no expired-lease takeover."""
++
++    def __init__(self, store: StateStore, *, now=time.time):
++        self.store, self.now = store, now
++
++    def begin(self, key: str, binding: dict, expires_at: int) -> int:
++        if type(expires_at) is not int or expires_at <= self.now():
++            raise StateInvalid("transaction requires a future expiry")
++        binding, _ = _snapshot(binding)
++        return self.store.create(
++            key,
++            {
++                "status": "pending",
++                "binding": binding,
++                "expires_at": expires_at,
++                "claim_id": None,
++                "result": None,
++                "checkpoints": {},
++                "history": [{"status": "pending", "at": int(self.now())}],
++            },
++        )
++
++    def _read(self, key: str) -> tuple[dict, int]:
++        observed = self.store.read(key)
++        if observed is None:
++            raise StateConflict("transaction not found")
++        row, generation = observed
++        if (
++            row.get("status") not in ("pending", "claimed", "completed", "uncertain")
++            or not isinstance(row.get("binding"), dict)
++            or type(row.get("expires_at")) is not int
++            or not isinstance(row.get("history"), list)
++        ):
++            raise StateUnavailable("transaction state malformed")
++        return row, generation
++
++    def claim(self, key: str, claim_id: str) -> tuple[dict, int]:
++        if not isinstance(claim_id, str) or not claim_id or len(claim_id) > 160:
++            raise StateInvalid("claim identifier required")
++        row, generation = self._read(key)
++        if row["status"] != "pending" or row["expires_at"] <= self.now():
++            raise StateConflict("transaction is not pending or has expired")
++        updated = {
++            **row,
++            "status": "claimed",
++            "claim_id": claim_id,
++            "history": row["history"] + [{"status": "claimed", "at": int(self.now())}],
++        }
++        return updated, self.store.replace(key, updated, generation)
++
++    def checkpoint(
++        self, key: str, claim_id: str, name: str, value: dict
++    ) -> tuple[dict, int]:
++        if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name):
++            raise StateInvalid("invalid effect checkpoint name")
++        value, raw = _snapshot(value)
++        row, generation = self._read(key)
++        if row.get("claim_id") != claim_id or row["status"] not in (
++            "claimed",
++            "uncertain",
++        ):
++            raise StateConflict("transaction claim changed")
++        checkpoints = row.get("checkpoints", {})
++        if not isinstance(checkpoints, dict):
++            raise StateUnavailable("effect checkpoints malformed")
++        if name in checkpoints:
++            if checkpoints[name] != value:
++                raise StateConflict("frozen effect checkpoint changed")
++            return row, generation
++        updated = {
++            **row,
++            "checkpoints": {**checkpoints, name: value},
++            "history": row["history"]
++            + [
++                {
++                    "status": row["status"],
++                    "checkpoint": name,
++                    "sha256": hashlib.sha256(raw).hexdigest(),
++                    "at": int(self.now()),
++                }
++            ],
++        }
++        return updated, self.store.replace(key, updated, generation)
++
++    def finish(
++        self, key: str, claim_id: str, status: str, result: dict
++    ) -> tuple[dict, int]:
++        if status not in ("completed", "uncertain"):
++            raise StateInvalid("invalid transaction outcome")
++        result, _ = _snapshot(result)
++        row, generation = self._read(key)
++        if row.get("claim_id") != claim_id:
++            raise StateConflict("transaction claim changed")
++        if row["status"] == status and row["result"] == result:
++            return row, generation
++        if row["status"] != "claimed" and not (
++            row["status"] == "uncertain" and status == "completed"
++        ):
++            raise StateConflict("transaction outcome already retained")
++        updated = {
++            **row,
++            "status": status,
++            "result": result,
++            "history": row["history"]
++            + [{"status": status, "at": int(self.now()), "result": result}],
++        }
++        return updated, self.store.replace(key, updated, generation)
+diff --git a/tests/test_unblock_bridge.py b/tests/test_unblock_bridge.py
+new file mode 100644
+index 0000000..0591952
+--- /dev/null
++++ b/tests/test_unblock_bridge.py
+@@ -0,0 +1,259 @@
++"""HTTP boundary tests; the native grant service has separate live evidence."""
++
++import json
++import httpx
++import pytest
++
++from fulcra_mcp.unblock_bridge import (
++    NativeBridge,
++    OwnerAccess,
++    BridgeRejected,
++    BridgeUnavailable,
++)
++
++PROJECT = "11111111-1111-4111-8111-111111111111"
++GRANT = "22222222-2222-4222-8222-222222222222"
++RECORD = "33333333-3333-4333-8333-333333333333"
++ORIGIN = "https://dashboard.my.fulcra.ai"
++RESOURCE = ORIGIN + "/mcp"
++
++
++class Service:
++    def __init__(self):
++        self.calls = []
++        self.grants = []
++        self.post_bodies = []
++        self.fail_after_effect = False
++        self.fail_revoke_after_effect = False
++        self.foreign = False
++        self.domain = "dashboard.my.fulcra.ai"
++        self.redirect = False
++
++    def __call__(self, request):
++        self.calls.append(request)
++        path = request.url.path
++        if request.url.host == "api.invalid":
++            if path == "/user/v1alpha1/info":
++                return httpx.Response(200, json={"userid": "human-a"})
++            if path == "/user/v1/deploy/project/" + PROJECT:
++                if self.foreign:
++                    return httpx.Response(404)
++                if self.redirect:
++                    return httpx.Response(
++                        302, headers={"Location": "https://evil.invalid/steal"}
++                    )
++                return httpx.Response(200, json={"id": PROJECT, "domain": self.domain})
++            return httpx.Response(404)
++        assert request.url.host == "dashboard.my.fulcra.ai"
++        if path.endswith("/prepare_enrollment"):
++            return httpx.Response(200, json={"expires_at": 200})
++        if path.endswith("/attention"):
++            return httpx.Response(
++                200, json={"source": "checked", "grants": self.grants, "requests": []}
++            )
++        if path.endswith("/enroll"):
++            body = json.loads(request.content)
++            self.post_bodies.append(body)
++            if not self.grants:
++                self.grants.append(
++                    {
++                        **body,
++                        "grant_id": GRANT,
++                        "record_id": RECORD,
++                        "agent_ids": ["worker"],
++                        "revoked": False,
++                    }
++                )
++            if self.fail_after_effect:
++                self.fail_after_effect = False
++                raise httpx.ReadTimeout("synthetic lost response", request=request)
++            return httpx.Response(
++                200,
++                json={
++                    **body,
++                    "grant_id": GRANT,
++                    "record_id": RECORD,
++                    "credential": "synthetic-worker-grant",
++                    "visibility": "visible",
++                    "agent_ids": ["worker"],
++                },
++            )
++        if path.endswith("/revoke"):
++            body = json.loads(request.content)
++            for grant in self.grants:
++                if grant["grant_id"] == body["grant_id"]:
++                    grant["revoked"] = True
++            if self.fail_revoke_after_effect:
++                self.fail_revoke_after_effect = False
++                raise httpx.ReadTimeout(
++                    "synthetic lost revocation response", request=request
++                )
++            return httpx.Response(
++                200, json={"visibility": "visible", "record_id": RECORD}
++            )
++        if path.endswith("/enrollment"):
++            return httpx.Response(
++                200,
++                json={
++                    "kind": "agent",
++                    "id": "worker",
++                    "environment": "env",
++                    "grant_id": GRANT,
++                    "expires_at": 200,
++                    "agent_ids": ["worker"],
++                },
++            )
++        return httpx.Response(404)
++
++
++@pytest.fixture
++def context():
++    service = Service()
++    bridge = NativeBridge(
++        "https://api.invalid", transport=httpx.MockTransport(service), now=lambda: 100
++    )
++    owner = OwnerAccess("synthetic-owner-access", 500)
++    return service, bridge, owner
++
++
++async def binding(bridge, owner, resource=RESOURCE):
++    return await bridge.resolve_owned_project(
++        owner, PROJECT, resource, "worker", "env", "Worker"
++    )
++
++
++@pytest.mark.parametrize(
++    "foreign,domain,resource",
++    [
++        (True, "dashboard.my.fulcra.ai", RESOURCE),
++        (False, "other.my.fulcra.ai", RESOURCE),
++        (False, "evil.invalid", "https://evil.invalid/mcp"),
++        (False, "dashboard.my.fulcra.ai", ORIGIN + ":443/mcp"),
++        (False, "dashboard.my.fulcra.ai", "https://user@dashboard.my.fulcra.ai/mcp"),
++    ],
++)
++async def test_ownership_and_canonical_domain_precede_dashboard_credentials(
++    context, foreign, domain, resource
++):
++    service, bridge, owner = context
++    service.foreign, service.domain = foreign, domain
++    with pytest.raises(BridgeRejected):
++        await binding(bridge, owner, resource)
++    assert all(request.url.host == "api.invalid" for request in service.calls)
++
++
++async def test_platform_redirect_is_not_followed(context):
++    service, bridge, owner = context
++    service.redirect = True
++    with pytest.raises(BridgeRejected):
++        await binding(bridge, owner)
++    assert all(request.url.host == "api.invalid" for request in service.calls)
++
++
++async def test_native_grant_is_frozen_verified_and_narrow(context):
++    service, bridge, owner = context
++    approved = await binding(bridge, owner)
++    intent = await bridge.prepare_enrollment(approved, owner, "intent-1")
++    receipt = await bridge.enroll_worker(approved, owner, intent)
++    assert receipt.grant_id == GRANT and receipt.expires_at == 200
++    assert "synthetic-worker-grant" not in repr(receipt)
++    assert service.post_bodies == [
++        {
++            "intent_id": "intent-1",
++            "agent_id": "worker",
++            "name": "Worker",
++            "kind": "agent",
++            "environment": "env",
++            "expires_at": 200,
++            "renewal_of": None,
++        }
++    ]
++    native_owner = [
++        r
++        for r in service.calls
++        if r.url.host == "dashboard.my.fulcra.ai"
++        and not r.url.path.endswith("/enrollment")
++    ]
++    assert all(r.headers.get("origin") == ORIGIN for r in native_owner)
++    assert all(
++        r.headers.get("cookie") == "fulcra_access_token=synthetic-owner-access"
++        for r in native_owner
++    )
++    assert "synthetic-owner-access" not in repr(owner)
++
++
++async def test_lost_response_reconciles_exact_source_before_credential_recovery(
++    context,
++):
++    service, bridge, owner = context
++    approved = await binding(bridge, owner)
++    intent = await bridge.prepare_enrollment(approved, owner, "intent-1")
++    service.fail_after_effect = True
++    with pytest.raises(BridgeUnavailable):
++        await bridge.enroll_worker(approved, owner, intent)
++    replacement = NativeBridge(
++        "https://api.invalid", transport=httpx.MockTransport(service), now=lambda: 100
++    )
++    receipt = await replacement.reconcile_enrollment(approved, owner, intent)
++    assert receipt.grant_id == GRANT
++    assert service.post_bodies == [intent, intent]
++    assert len(service.grants) == 1
++    paths = [r.url.path for r in service.calls]
++    assert paths.index("/api/unblock/attention") < len(paths) - 2
++
++
++async def test_missing_unknown_or_changed_receipt_never_reposts(context):
++    service, bridge, owner = context
++    approved = await binding(bridge, owner)
++    intent = await bridge.prepare_enrollment(approved, owner, "intent-1")
++    assert await bridge.reconcile_enrollment(approved, owner, intent) is None
++    assert service.post_bodies == []
++    service.grants = [
++        {
++            **intent,
++            "grant_id": GRANT,
++            "record_id": RECORD,
++            "agent_ids": ["worker"],
++            "revoked": False,
++            "environment": "another",
++        }
++    ]
++    with pytest.raises(BridgeRejected):
++        await bridge.reconcile_enrollment(approved, owner, intent)
++    assert service.post_bodies == []
++
++
++async def test_removed_project_blocks_renewal_before_owner_forwarding(context):
++    service, bridge, owner = context
++    approved = await binding(bridge, owner)
++    service.calls.clear()
++    service.foreign = True
++    with pytest.raises(BridgeRejected):
++        await bridge.prepare_enrollment(approved, owner, "renewal-1", renewal_of=GRANT)
++    assert all(request.url.host == "api.invalid" for request in service.calls)
++
++
++async def test_revocation_needs_exact_owned_scope_and_actual_readback(context):
++    service, bridge, owner = context
++    approved = await binding(bridge, owner)
++    intent = await bridge.prepare_enrollment(approved, owner, "intent-1")
++    await bridge.enroll_worker(approved, owner, intent)
++    service.grants[0]["environment"] = "another"
++    with pytest.raises(BridgeRejected):
++        await bridge.revoke_worker(approved, owner, GRANT, "revoke-1")
++    assert not any(r.url.path.endswith("/revoke") for r in service.calls)
++    service.grants[0]["environment"] = "env"
++    assert await bridge.revoke_worker(approved, owner, GRANT, "revoke-1") is True
++    assert await bridge.revocation_observed(approved, owner, GRANT) is True
++
++
++async def test_lost_revocation_response_reconciles_without_another_post(context):
++    service, bridge, owner = context
++    approved = await binding(bridge, owner)
++    intent = await bridge.prepare_enrollment(approved, owner, "intent-1")
++    await bridge.enroll_worker(approved, owner, intent)
++    service.fail_revoke_after_effect = True
++    with pytest.raises(BridgeUnavailable):
++        await bridge.revoke_worker(approved, owner, GRANT, "revoke-1")
++    assert await bridge.revocation_observed(approved, owner, GRANT) is True
++    assert len([r for r in service.calls if r.url.path.endswith("/revoke")]) == 1
+diff --git a/tests/test_unblock_consent.py b/tests/test_unblock_consent.py
+new file mode 100644
+index 0000000..0243889
+--- /dev/null
++++ b/tests/test_unblock_consent.py
+@@ -0,0 +1,402 @@
++"""Real OAuth HTTP routes, cookie/CSRF rules, and private-consent rendering."""
++
++import re
++from urllib.parse import parse_qs, urlsplit
++
++import httpx
++import pytest
++from starlette.applications import Starlette
++from starlette.routing import Route
++from test_unblock_provider import context, VERIFIER, CHALLENGE, RESOURCE_A
++from fulcra_mcp.unblock_consent import (
++    create_unblock_routes,
++    callback_response,
++    optional_provider,
++)
++
++
++async def session(provider):
++    async def callback(request):
++        return await callback_response(request, provider)
++
++    app = Starlette(
++        routes=[Route("/callback", callback)] + create_unblock_routes(provider)
++    )
++    return httpx.AsyncClient(
++        transport=httpx.ASGITransport(app),
++        base_url="https://issuer.invalid",
++        follow_redirects=False,
++    )
++
++
++async def start(client, *, auth_method="client_secret_post"):
++    registered = await client.post(
++        "/unblock/register",
++        json={
++            "redirect_uris": ["https://client.invalid/callback"],
++            "client_name": "<script>untrusted</script>",
++            "token_endpoint_auth_method": auth_method,
++            "grant_types": ["authorization_code", "refresh_token"],
++            "scope": "unblock:worker",
++        },
++    )
++    assert registered.status_code == 201
++    registration = registered.json()
++    auth = await client.get(
++        "/unblock/authorize",
++        params={
++            "response_type": "code",
++            "client_id": registration["client_id"],
++            "redirect_uri": "https://client.invalid/callback",
++            "scope": "unblock:worker",
++            "code_challenge": CHALLENGE,
++            "code_challenge_method": "S256",
++            "resource": RESOURCE_A,
++            "state": "exact-client-state",
++        },
++    )
++    assert auth.status_code == 302
++    state = parse_qs(urlsplit(auth.headers["location"]).query)["state"][0]
++    callback = await client.get("/callback", params={"state": state, "code": "a"})
++    assert callback.status_code == 302
++    return registration, state, callback
++
++
++async def test_metadata_routes_describe_the_actual_isolated_branch(context):
++    provider = context[4]
++    async with await session(provider) as client:
++        response = await client.get("/.well-known/oauth-authorization-server/unblock")
++        assert response.status_code == 200
++        metadata = response.json()
++        assert metadata["issuer"] == "https://issuer.invalid/unblock"
++        assert metadata["token_endpoint"] == "https://issuer.invalid/unblock/token"
++        assert (
++            metadata["authorization_endpoint"]
++            == "https://issuer.invalid/unblock/authorize"
++        )
++        assert (
++            metadata["registration_endpoint"]
++            == "https://issuer.invalid/unblock/register"
++        )
++        assert metadata["scopes_supported"] == ["unblock:worker"]
++
++
++async def test_real_dcr_consent_cookie_and_token_exchange(context):
++    bridge, provider = context[2], context[4]
++    async with await session(provider) as client:
++        registration, state, callback = await start(client)
++        cookie = callback.headers["set-cookie"]
++        assert (
++            "__Host-unblock-" in cookie
++            and "Secure" in cookie
++            and "HttpOnly" in cookie
++            and "SameSite=lax" in cookie
++            and "Path=/" in cookie
++        )
++        location = callback.headers["location"]
++        consent = await client.get(location)
++        assert consent.status_code == 200
++        assert "<script>untrusted</script>" not in consent.text
++        assert "&lt;script&gt;untrusted&lt;/script&gt;" in consent.text
++        assert (
++            "synthetic-access" not in consent.text
++            and "synthetic-owner-refresh" not in consent.text
++        )
++        assert consent.headers["cache-control"] == "no-store"
++        assert "frame-ancestors 'none'" in consent.headers["content-security-policy"]
++        assert bridge.grants == {}
++        csrf = re.search(r'name="csrf" value="([^"]+)"', consent.text).group(1)
++        form = {
++            "csrf": csrf,
++            "decision": "approve",
++            "agent": "worker-a",
++            "environment": "env",
++            "name": "Worker A",
++        }
++        denied = await client.post(
++            location, data=form, headers={"Origin": "https://evil.invalid"}
++        )
++        assert denied.status_code == 403 and bridge.grants == {}
++        approved = await client.post(
++            location, data=form, headers={"Origin": "https://issuer.invalid"}
++        )
++        assert approved.status_code == 302
++        returned = parse_qs(urlsplit(approved.headers["location"]).query)
++        assert returned["state"] == ["exact-client-state"]
++        assert bridge.grants == {}
++        response = await client.post(
++            "/unblock/token",
++            data={
++                "grant_type": "authorization_code",
++                "code": returned["code"][0],
++                "code_verifier": VERIFIER,
++                "resource": RESOURCE_A,
++                "redirect_uri": "https://client.invalid/callback",
++                "client_id": registration["client_id"],
++                "client_secret": registration["client_secret"],
++            },
++        )
++        assert response.status_code == 200
++        assert response.json()["access_token"].startswith("synthetic-native-")
++        assert response.json()["scope"] == "unblock:worker"
++        assert len(bridge.grants) == 1
++        replay = await client.get("/callback", params={"state": state, "code": "a"})
++        assert replay.status_code == 400
++
++
++async def test_decline_and_wrong_cookie_do_not_grant_worker_access(context):
++    bridge, provider = context[2], context[4]
++    async with await session(provider) as client:
++        _, _, callback = await start(client)
++        location = callback.headers["location"]
++        page = await client.get(location)
++        csrf = re.search(r'name="csrf" value="([^"]+)"', page.text).group(1)
++        async with await session(provider) as stranger:
++            assert (await stranger.get(location)).status_code == 400
++            assert (
++                await stranger.post(
++                    location,
++                    data={
++                        "csrf": csrf,
++                        "decision": "approve",
++                        "agent": "bad",
++                        "environment": "env",
++                        "name": "bad",
++                    },
++                    headers={"Origin": "https://issuer.invalid"},
++                )
++            ).status_code == 403
++        response = await client.post(
++            location,
++            data={
++                "csrf": csrf,
++                "decision": "deny",
++                "agent": "",
++                "environment": "",
++                "name": "",
++            },
++            headers={"Origin": "https://issuer.invalid"},
++        )
++        assert response.status_code == 302
++        assert parse_qs(urlsplit(response.headers["location"]).query)["error"] == [
++            "access_denied"
++        ]
++        assert bridge.grants == {}
++
++
++async def test_duplicate_resource_and_large_bodies_fail_before_authorization(context):
++    provider = context[4]
++    async with await session(provider) as client:
++        response = await client.get(
++            "/unblock/authorize?resource=" + RESOURCE_A + "&resource=" + RESOURCE_A
++        )
++        assert response.status_code == 400
++        response = await client.post(
++            "/unblock/register",
++            content=b"x" * 65537,
++            headers={"content-type": "application/json"},
++        )
++        assert response.status_code == 413
++
++
++def test_disabled_or_unconfigured_branch_discovers_no_credentials(monkeypatch):
++    import fulcra_mcp.unblock_consent as module
++
++    monkeypatch.setattr(module.settings, "unblock_enabled", False)
++
++    def forbidden():
++        pytest.fail("disabled branch must not discover credentials")
++
++    monkeypatch.setattr(module, "configured_store", forbidden)
++    assert optional_provider() is None
++    monkeypatch.setattr(module.settings, "unblock_enabled", True)
++    monkeypatch.setattr(module.settings, "state_bucket", None)
++    assert optional_provider() is None
++
++
++async def connected(client, *, auth_method="client_secret_post"):
++    registration, _, callback = await start(client, auth_method=auth_method)
++    location = callback.headers["location"]
++    page = await client.get(location)
++    csrf = re.search(r'name="csrf" value="([^"]+)"', page.text).group(1)
++    approved = await client.post(
++        location,
++        data={
++            "csrf": csrf,
++            "decision": "approve",
++            "agent": "worker-a",
++            "environment": "env",
++            "name": "Worker A",
++        },
++        headers={"Origin": "https://issuer.invalid"},
++    )
++    code = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
++    token = await client.post(
++        "/unblock/token",
++        data={
++            "grant_type": "authorization_code",
++            "code": code,
++            "code_verifier": VERIFIER,
++            "resource": RESOURCE_A,
++            "redirect_uri": "https://client.invalid/callback",
++            "client_id": registration["client_id"],
++            **(
++                {"client_secret": registration["client_secret"]}
++                if registration.get("client_secret")
++                else {}
++            ),
++        },
++    )
++    assert token.status_code == 200
++    return registration, token.json()
++
++
++async def test_revocation_does_not_report_success_before_actual_readback(context):
++    bridge, provider = context[2], context[4]
++    async with await session(provider) as client:
++        registration, tokens = await connected(client)
++        bridge.lose_revocation = True
++        bridge.lose_revocation_readback = True
++        body = {
++            "token": tokens["access_token"],
++            "client_id": registration["client_id"],
++            "client_secret": registration["client_secret"],
++        }
++        assert (await client.post("/unblock/revoke", data=body)).status_code == 503
++        assert (await client.post("/unblock/revoke", data=body)).status_code == 200
++        assert bridge.revoked
++
++
++async def test_another_oauth_client_cannot_revoke_this_connection(context):
++    bridge, provider = context[2], context[4]
++    async with await session(provider) as client:
++        _, tokens = await connected(client)
++        stranger = (
++            await client.post(
++                "/unblock/register",
++                json={
++                    "redirect_uris": ["https://another.invalid/callback"],
++                    "grant_types": ["authorization_code", "refresh_token"],
++                    "scope": "unblock:worker",
++                },
++            )
++        ).json()
++        assert (
++            await client.post(
++                "/unblock/revoke",
++                data={
++                    "token": tokens["access_token"],
++                    "client_id": stranger["client_id"],
++                    "client_secret": stranger["client_secret"],
++                },
++            )
++        ).status_code == 200
++        assert not bridge.revoked
++
++
++async def test_existing_registered_callback_dispatches_new_persistent_state(
++    context, monkeypatch
++):
++    import fulcra_mcp.main as main
++    from test_unblock_provider import CLIENT, CHALLENGE
++    from mcp.server.auth.provider import AuthorizationParams
++
++    provider = context[4]
++    monkeypatch.setattr(main, "unblock_provider", provider)
++    params = AuthorizationParams(
++        state="caller",
++        scopes=["unblock:worker"],
++        code_challenge=CHALLENGE,
++        redirect_uri="https://client.invalid/callback",
++        redirect_uri_provided_explicitly=True,
++        resource=RESOURCE_A,
++    )
++    url = await provider.authorize(CLIENT, params)
++    state = parse_qs(urlsplit(url).query)["state"][0]
++    async with httpx.AsyncClient(
++        transport=httpx.ASGITransport(main.app), base_url="https://issuer.invalid"
++    ) as client:
++        response = await client.get("/callback", params={"state": state, "code": "a"})
++    assert response.status_code == 302
++    assert "/unblock/consent/" in response.headers["location"]
++
++
++async def test_original_callback_state_keeps_its_existing_route(context, monkeypatch):
++    import fulcra_mcp.main as main
++
++    provider = context[4]
++    monkeypatch.setattr(main, "unblock_provider", provider)
++    state = "uaa-login-" + "a" * 64
++    monkeypatch.setitem(main.oauth_provider.state_mapping, state, {"original": True})
++
++    async def original(code, observed_state):
++        assert (code, observed_state) == ("original-code", state)
++        return "https://client.invalid/original"
++
++    monkeypatch.setattr(main.oauth_provider, "handle_callback", original)
++    async with httpx.AsyncClient(
++        transport=httpx.ASGITransport(main.app), base_url="https://issuer.invalid"
++    ) as client:
++        response = await client.get(
++            "/callback", params={"state": state, "code": "original-code"}
++        )
++    assert response.status_code == 302
++    assert response.headers["location"] == "https://client.invalid/original"
++
++
++def test_enabling_without_a_pilot_or_public_resource_policy_never_discovers_credentials(
++    monkeypatch,
++):
++    import fulcra_mcp.unblock_consent as module
++
++    monkeypatch.setattr(module.settings, "unblock_enabled", True)
++    monkeypatch.setattr(module.settings, "state_bucket", "synthetic-bucket")
++    monkeypatch.setattr(module.settings, "oidc_client_id", "existing-client")
++    monkeypatch.setattr(module.settings, "fulcra_oidc_domain", "auth.invalid")
++    monkeypatch.setattr(module.settings, "fulcra_api", "https://api.invalid")
++    monkeypatch.setattr(module.settings, "unblock_resources", [])
++    monkeypatch.setattr(module.settings, "unblock_allow_owned_resources", False)
++
++    def forbidden():
++        pytest.fail("missing resource policy reached ambient credentials")
++
++    monkeypatch.setattr(module, "configured_store", forbidden)
++    assert module.optional_provider() is None
++
++
++async def test_public_client_secretless_revocation_ends_issued_connection(context):
++    bridge, provider = context[2], context[4]
++    async with await session(provider) as client:
++        registration, tokens = await connected(client, auth_method="none")
++        assert not registration.get("client_secret")
++        response = await client.post(
++            "/unblock/revoke",
++            data={
++                "client_id": registration["client_id"],
++                "token": tokens["access_token"],
++            },
++        )
++        assert response.status_code == 200 and bridge.revoked
++        refreshed = await client.post(
++            "/unblock/token",
++            data={
++                "grant_type": "refresh_token",
++                "refresh_token": tokens["refresh_token"],
++                "client_id": registration["client_id"],
++                "resource": RESOURCE_A,
++            },
++        )
++        assert refreshed.status_code == 400
++        assert len(bridge.grants) == 1
++
++
++@pytest.mark.parametrize("secret", [None, "wrong-secret"])
++async def test_confidential_revocation_still_requires_correct_secret(context, secret):
++    bridge, provider = context[2], context[4]
++    async with await session(provider) as client:
++        registration, tokens = await connected(client)
++        body = {"client_id": registration["client_id"], "token": tokens["access_token"]}
++        if secret is not None:
++            body["client_secret"] = secret
++        assert (await client.post("/unblock/revoke", data=body)).status_code == 401
++        assert not bridge.revoked
+diff --git a/tests/test_unblock_owner.py b/tests/test_unblock_owner.py
+new file mode 100644
+index 0000000..5659d45
+--- /dev/null
++++ b/tests/test_unblock_owner.py
+@@ -0,0 +1,147 @@
++"""Owner refresh is a one-time durable effect, isolated from OAuth clients."""
++
++import asyncio
++from datetime import datetime
++
++import pytest
++from fulcra_api.credentials import FulcraCredentials
++from test_unblock_state import Backend
++from fulcra_mcp.unblock_state import StateStore
++from fulcra_mcp.unblock_owner import OwnerVault
++from fulcra_mcp.unblock_bridge import BridgeRejected, BridgeUnavailable
++
++
++def credentials(tag, expiry):
++    return FulcraCredentials(
++        access_token="synthetic-access-" + tag,
++        access_token_expiration=datetime.fromtimestamp(expiry),
++        refresh_token="synthetic-refresh-" + tag,
++    )
++
++
++async def test_credentials_survive_replacement_without_a_client_slot():
++    store = StateStore(Backend())
++    vault = OwnerVault(store, now=lambda: 100)
++    a = await vault.save(credentials("a", 500), "human-a", 1000)
++    b = await vault.save(credentials("b", 500), "human-b", 1000)
++    replacement = OwnerVault(store, now=lambda: 100)
++    assert (await replacement.load(a)).token == "synthetic-access-a"
++    assert (await replacement.load(b)).token == "synthetic-access-b"
++    assert a != b
++
++
++async def test_one_instance_refreshes_while_another_keeps_uncertainty_visible():
++    backend = Backend()
++    store = StateStore(backend)
++    started, release = asyncio.Event(), asyncio.Event()
++    effects = []
++
++    async def refresh(old):
++        effects.append(old.refresh_token)
++        started.set()
++        await release.wait()
++        return credentials("new", 900)
++
++    a = OwnerVault(store, refresh=refresh, now=lambda: 450)
++    key = await a.save(credentials("old", 500), "human-a", 1000)
++    b = OwnerVault(StateStore(backend), refresh=refresh, now=lambda: 450)
++    first = asyncio.create_task(a.load(key))
++    await started.wait()
++    with pytest.raises(BridgeUnavailable):
++        await b.load(key)
++    release.set()
++    assert (await first).token == "synthetic-access-new"
++    assert (await b.load(key)).token == "synthetic-access-new"
++    assert effects == ["synthetic-refresh-old"]
++
++
++async def test_unknown_refresh_is_not_repeated_after_restart():
++    store = StateStore(Backend())
++    effects = []
++
++    async def refresh(old):
++        effects.append("attempted")
++        raise OSError("synthetic-sensitive-value")
++
++    a = OwnerVault(store, refresh=refresh, now=lambda: 450)
++    key = await a.save(credentials("old", 500), "human-a", 1000)
++    with pytest.raises(BridgeUnavailable) as caught:
++        await a.load(key)
++    assert "synthetic-sensitive-value" not in str(caught.value)
++    with pytest.raises(BridgeUnavailable):
++        await OwnerVault(store, refresh=refresh, now=lambda: 450).load(key)
++    assert effects == ["attempted"]
++    assert store.read(key)[0]["refresh_state"] == "uncertain"
++
++
++async def test_lost_persistence_after_refresh_never_repeats_the_upstream_effect():
++    backend = Backend()
++    store = StateStore(backend)
++    effects = []
++
++    async def refresh(old):
++        effects.append("attempted")
++        backend.unavailable = True
++        return credentials("new", 900)
++
++    vault = OwnerVault(store, refresh=refresh, now=lambda: 450)
++    key = await vault.save(credentials("old", 500), "human-a", 1000)
++    with pytest.raises(BridgeUnavailable):
++        await vault.load(key)
++    backend.unavailable = False
++    with pytest.raises(BridgeUnavailable):
++        await OwnerVault(store, refresh=refresh, now=lambda: 450).load(key)
++    assert effects == ["attempted"]
++    assert store.read(key)[0]["refresh_state"] in ["claimed", "uncertain"]
++
++
++async def test_expiry_and_revocation_prevent_new_access_and_preserve_cleanup():
++    store = StateStore(Backend())
++    clock = [100]
++    vault = OwnerVault(store, now=lambda: clock[0])
++    key = await vault.save(credentials("a", 500), "human-a", 600)
++    await vault.request_revocation(key)
++    with pytest.raises(BridgeRejected):
++        await vault.load(key)
++    assert (await vault.load(key, for_revocation=True)).token == "synthetic-access-a"
++    await vault.disable(key)
++    with pytest.raises(BridgeRejected):
++        await vault.load(key, for_revocation=True)
++    assert store.read(key)[0]["credentials"] is None
++    key2 = await vault.save(credentials("b", 500), "human-b", 600)
++    clock[0] = 601
++    with pytest.raises(BridgeRejected):
++        await vault.load(key2)
++
++
++async def test_revocation_during_refresh_does_not_erase_known_new_credentials_or_reenable_access():
++    store = StateStore(Backend())
++    started, release = asyncio.Event(), asyncio.Event()
++
++    async def refresh(old):
++        started.set()
++        await release.wait()
++        return credentials("new", 900)
++
++    vault = OwnerVault(store, refresh=refresh, now=lambda: 450)
++    key = await vault.save(credentials("old", 500), "human-a", 1000)
++    task = asyncio.create_task(vault.load(key))
++    await started.wait()
++    await vault.request_revocation(key)
++    release.set()
++    with pytest.raises(BridgeRejected):
++        await task
++    assert (await vault.load(key, for_revocation=True)).token == "synthetic-access-new"
++    assert store.read(key)[0]["revocation_requested"] is True
++
++
++async def test_frozen_owner_reference_reconciles_a_lost_create_response():
++    from fulcra_mcp.unblock_state import state_key
++
++    backend = Backend()
++    backend.hide_upload_generation = True
++    store = StateStore(backend)
++    vault = OwnerVault(store, now=lambda: 100)
++    key = state_key("owner", "frozen-login-transaction")
++    assert await vault.save(credentials("a", 500), "human-a", 1000, key=key) == key
++    assert (await vault.load(key)).token == "synthetic-access-a"
+diff --git a/tests/test_unblock_provider.py b/tests/test_unblock_provider.py
+new file mode 100644
+index 0000000..b7e5639
+--- /dev/null
++++ b/tests/test_unblock_provider.py
+@@ -0,0 +1,573 @@
++"""Actual token-handler lifecycle over durable state and private owner custody."""
++
++import asyncio
++import base64
++import hashlib
++import json
++import time
++import threading
++from dataclasses import replace
++from datetime import datetime
++from urllib.parse import parse_qs, urlencode, urlsplit
++from uuid import UUID, uuid5
++
++import pytest
++from fulcra_api.credentials import FulcraCredentials
++from mcp.server.auth.provider import AuthorizationParams
++from mcp.shared.auth import OAuthClientInformationFull
++from starlette.requests import Request
++from test_unblock_state import Backend
++
++from fulcra_mcp.unblock_bridge import (
++    ProjectBinding,
++    NativeGrantReceipt,
++    BridgeRejected,
++    BridgeUnavailable,
++)
++from fulcra_mcp.unblock_owner import OwnerVault
++from fulcra_mcp.unblock_provider import UnblockProvider
++from fulcra_mcp.unblock_resource import ResourceTokenHandler
++from fulcra_mcp.unblock_state import StateStore
++
++CLIENT = OAuthClientInformationFull(
++    client_id="same-client",
++    client_name="<Untrusted client>",
++    redirect_uris=["https://client.invalid/callback"],
++    grant_types=["authorization_code", "refresh_token"],
++)
++VERIFIER = "v" * 43
++CHALLENGE = (
++    base64.urlsafe_b64encode(hashlib.sha256(VERIFIER.encode()).digest())
++    .decode()
++    .rstrip("=")
++)
++RESOURCE_A = "https://a.my.fulcra.ai/mcp"
++RESOURCE_B = "https://b.my.fulcra.ai/mcp"
++
++
++class Upstream:
++    def __init__(self, clock):
++        self.clock, self.fulcra_credentials = clock, None
++
++    def get_authorization_code_url(self, *, redirect_uri, state):
++        assert redirect_uri == "https://issuer.invalid/callback"
++        return "https://auth.invalid/authorize?" + urlencode({"state": state})
++
++    def authorize_with_authorization_code(self, *, code, redirect_uri):
++        assert redirect_uri == "https://issuer.invalid/callback"
++        self.fulcra_credentials = FulcraCredentials(
++            access_token="synthetic-access-" + code,
++            access_token_expiration=datetime.fromtimestamp(self.clock[0] + 500),
++            refresh_token="synthetic-owner-refresh-" + code,
++        )
++
++
++class Bridge:
++    def __init__(self, clock):
++        self.clock, self.grants, self.revoked = clock, {}, set()
++        self.lose_enrollment = False
++        self.lose_revocation = False
++        self.lose_revocation_readback = False
++
++    async def find_project(self, owner, resource):
++        await asyncio.sleep(0)
++        identity = "a" if owner.token.startswith("synthetic-access-a") else "b"
++        if resource != f"https://{identity}.my.fulcra.ai/mcp":
++            raise BridgeRejected("foreign dashboard")
++        return ProjectBinding(
++            "human-" + identity,
++            str(uuid5(UUID(int=0), identity)),
++            resource[:-4],
++            resource,
++            "pending-consent",
++            "pending-consent",
++            "Pending consent",
++        )
++
++    async def resolve_owned_project(
++        self, owner, project_id, resource, agent, environment, name
++    ):
++        project = await self.find_project(owner, resource)
++        if project.project_id != project_id:
++            raise BridgeRejected("foreign project")
++        return replace(project, agent=agent, environment=environment, name=name)
++
++    async def prepare_enrollment(self, binding, owner, intent_id, *, renewal_of=None):
++        return {
++            "intent_id": intent_id,
++            "agent_id": binding.agent,
++            "name": binding.name,
++            "kind": "agent",
++            "environment": binding.environment,
++            "expires_at": self.clock[0] + 100,
++            "renewal_of": renewal_of,
++        }
++
++    async def enroll_worker(self, binding, owner, intent):
++        grant_id = str(uuid5(UUID(int=0), intent["intent_id"]))
++        receipt = NativeGrantReceipt(
++            grant_id,
++            str(uuid5(UUID(int=1), grant_id)),
++            "synthetic-native-" + grant_id,
++            intent["expires_at"],
++        )
++        self.grants.setdefault(intent["intent_id"], (binding, intent, receipt))
++        if self.lose_enrollment:
++            self.lose_enrollment = False
++            raise BridgeUnavailable("lost enrollment response")
++        return receipt
++
++    async def reconcile_enrollment(self, binding, owner, intent):
++        row = self.grants.get(intent["intent_id"])
++        if row and row[2].grant_id in self.revoked:
++            raise BridgeRejected("retained enrollment revoked")
++        return row[2] if row else None
++
++    async def revoke_worker(self, binding, owner, grant_id, intent_id):
++        self.revoked.add(grant_id)
++        if self.lose_revocation:
++            self.lose_revocation = False
++            raise BridgeUnavailable("lost revocation response")
++        return True
++
++    async def revocation_observed(self, binding, owner, grant_id):
++        if self.lose_revocation_readback:
++            self.lose_revocation_readback = False
++            raise BridgeUnavailable("revocation readback temporarily unavailable")
++        return grant_id in self.revoked
++
++
++@pytest.fixture
++async def context(monkeypatch):
++    clock = [int(time.time())]
++    # The actual SDK validates expiry against time.time; keep it on the same
++    # controlled clock as this provider. asyncio scheduling uses monotonic time.
++    import mcp.server.auth.handlers.token as token_module
++
++    monkeypatch.setattr(token_module.time, "time", lambda: clock[0])
++    store = StateStore(Backend())
++    bridge = Bridge(clock)
++    vault = OwnerVault(store, now=lambda: clock[0])
++
++    def provider():
++        return UnblockProvider(
++            store,
++            bridge,
++            vault,
++            issuer_origin="https://issuer.invalid",
++            upstream_factory=lambda: Upstream(clock),
++            now=lambda: clock[0],
++            allowed_resources=None,
++        )
++
++    instance = provider()
++    await instance.register_client(CLIENT)
++    return clock, store, bridge, vault, instance, provider
++
++
++async def login(provider, identity="a", *, caller_state="caller-state"):
++    resource = RESOURCE_A if identity == "a" else RESOURCE_B
++    params = AuthorizationParams(
++        state=caller_state,
++        scopes=["unblock:worker"],
++        code_challenge=CHALLENGE,
++        redirect_uri="https://client.invalid/callback",
++        redirect_uri_provided_explicitly=True,
++        resource=resource,
++    )
++    url = await provider.authorize(CLIENT, params)
++    internal = parse_qs(urlsplit(url).query)["state"][0]
++    assert internal != caller_state
++    consent_id, secret = await provider.receive_callback(identity, internal)
++    return consent_id, secret
++
++
++async def approve(provider, consent_id, secret, agent="worker-a"):
++    url = await provider.approve_consent(
++        consent_id, secret, agent=agent, environment="env", name=agent
++    )
++    return parse_qs(urlsplit(url).query)["code"][0], parse_qs(urlsplit(url).query)[
++        "state"
++    ][0]
++
++
++async def token(
++    provider,
++    *,
++    code=None,
++    refresh=None,
++    resource=RESOURCE_A,
++    verifier=VERIFIER,
++    scope=None,
++):
++    fields = [("client_id", CLIENT.client_id)]
++    if code:
++        fields += [
++            ("grant_type", "authorization_code"),
++            ("code", code),
++            ("code_verifier", verifier),
++            ("redirect_uri", "https://client.invalid/callback"),
++        ]
++    else:
++        fields += [("grant_type", "refresh_token"), ("refresh_token", refresh)]
++    if resource is not None:
++        fields.append(("resource", resource))
++    if scope is not None:
++        fields.append(("scope", scope))
++    body = urlencode(fields).encode()
++
++    async def receive():
++        return {"type": "http.request", "body": body, "more_body": False}
++
++    request = Request(
++        {
++            "type": "http",
++            "method": "POST",
++            "path": "/token",
++            "headers": [(b"content-type", b"application/x-www-form-urlencoded")],
++            "query_string": b"",
++        },
++        receive,
++    )
++
++    class Auth:
++        async def authenticate_request(self, request):
++            return CLIENT
++
++    response = await ResourceTokenHandler(provider, Auth()).handle(request)
++    return response.status_code, json.loads(response.body)
++
++
++async def test_no_worker_authority_before_matching_human_consent(context):
++    _, _, bridge, _, provider, _ = context
++    consent_id, secret = await login(provider)
++    snapshot = await provider.consent_snapshot(consent_id, secret)
++    assert snapshot["subject"] == "human-a" and snapshot["resource"] == RESOURCE_A
++    assert "synthetic-access" not in json.dumps(snapshot)
++    with pytest.raises(BridgeRejected):
++        await approve(provider, consent_id, "wrong-secret")
++    assert bridge.grants == {}
++    code, state = await approve(provider, consent_id, secret)
++    assert state == "caller-state"
++    assert bridge.grants == {}
++    status, result = await token(provider, code=code)
++    assert status == 200 and result["access_token"].startswith("synthetic-native-")
++    assert result["scope"] == "unblock:worker" and result["expires_in"] == 100
++    assert "synthetic-access" not in json.dumps(
++        result
++    ) and "synthetic-owner-refresh" not in json.dumps(result)
++
++
++async def test_same_client_two_humans_survive_replacement_without_crossing_credentials(
++    context,
++):
++    _, _, bridge, _, provider, replacement = context
++    a, b = await asyncio.gather(
++        login(provider, "a", caller_state="state-a"),
++        login(provider, "b", caller_state="state-b"),
++    )
++    fresh = replacement()
++    code_a, state_a = await approve(fresh, *a, "worker-a")
++    code_b, state_b = await approve(fresh, *b, "worker-b")
++    assert (state_a, state_b) == ("state-a", "state-b")
++    result_a, result_b = await asyncio.gather(
++        token(fresh, code=code_a), token(fresh, code=code_b, resource=RESOURCE_B)
++    )
++    assert result_a[0] == result_b[0] == 200
++    assert {row[0].subject for row in bridge.grants.values()} == {"human-a", "human-b"}
++    assert {row[0].agent for row in bridge.grants.values()} == {"worker-a", "worker-b"}
++    assert result_a[1]["access_token"] != result_b[1]["access_token"]
++
++
++async def test_consumed_consent_cannot_issue_another_code(context):
++    _, _, _, _, provider, _ = context
++    consent_id, secret = await login(provider)
++    await approve(provider, consent_id, secret)
++    with pytest.raises(BridgeRejected):
++        await approve(provider, consent_id, secret)
++
++
++async def test_code_replay_denies_reissuance_and_revokes_the_original_grant(context):
++    _, _, bridge, _, provider, _ = context
++    code, _ = await approve(provider, *await login(provider))
++    assert (await token(provider, code=code))[0] == 200
++    assert (await token(provider, code=code))[0] == 400
++    assert len(bridge.grants) == 1
++    assert next(iter(bridge.grants.values()))[2].grant_id in bridge.revoked
++
++
++async def test_wrong_verifier_or_resource_cannot_cancel_a_completed_connection(context):
++    _, _, bridge, _, provider, _ = context
++    code, _ = await approve(provider, *await login(provider))
++    assert (await token(provider, code=code))[0] == 200
++    assert (await token(provider, code=code, verifier="wrong"))[0] == 400
++    assert (await token(provider, code=code, resource=RESOURCE_B))[0] == 400
++    assert bridge.revoked == set() and len(bridge.grants) == 1
++
++
++async def test_refresh_retry_returns_the_same_replacement_without_new_effects_or_expiry_extension(
++    context,
++):
++    clock, _, bridge, _, provider, replacement = context
++    code, _ = await approve(provider, *await login(provider))
++    first = (await token(provider, code=code))[1]
++    clock[0] += 20
++    status, rotated = await token(
++        provider, refresh=first["refresh_token"], resource=None
++    )
++    assert status == 200
++    clock[0] += 5
++    status, retry = await token(
++        replacement(), refresh=first["refresh_token"], resource=None
++    )
++    assert status == 200
++    assert retry["access_token"] == rotated["access_token"]
++    assert retry["refresh_token"] == rotated["refresh_token"]
++    assert retry["expires_in"] == rotated["expires_in"] - 5
++    assert len(bridge.grants) == 2
++    assert (await token(provider, refresh=first["refresh_token"], resource=RESOURCE_B))[
++        0
++    ] == 400
++    assert (
++        await token(provider, refresh=rotated["refresh_token"], scope="unblock:admin")
++    )[0] == 400
++    assert len(bridge.grants) == 2
++
++
++async def test_unknown_native_enrollment_retains_intent_and_replay_only_reconciles_cleanup(
++    context,
++):
++    _, store, bridge, _, provider, _ = context
++    code, _ = await approve(provider, *await login(provider))
++    bridge.lose_enrollment = True
++    assert (await token(provider, code=code))[0] == 400
++    from fulcra_mcp.unblock_state import state_key
++
++    row = store.read(state_key("code", code))[0]
++    assert row["status"] == "uncertain"
++    assert row["checkpoints"]["native_intent"]["intent_id"]
++    assert (await token(provider, code=code))[0] == 400
++    assert len(bridge.grants) == 1
++    assert next(iter(bridge.grants.values()))[2].grant_id in bridge.revoked
++
++
++async def test_old_resource_tokens_are_not_resolved_in_the_new_namespace(context):
++    _, _, _, _, provider, _ = context
++    assert await provider.load_access_token("mcp_original-resource-token") is None
++    assert (
++        await provider.load_refresh_token(CLIENT, "mcp_refresh_original-resource-token")
++        is None
++    )
++
++
++async def test_expired_code_replay_with_valid_proof_revokes_the_live_renewal_family(
++    context,
++):
++    clock, _, bridge, _, provider, _ = context
++    code, _ = await approve(provider, *await login(provider))
++    first = (await token(provider, code=code))[1]
++    root_grant = next(iter(bridge.grants.values()))[2].grant_id
++    clock[0] += 80
++    assert (await token(provider, refresh=first["refresh_token"]))[0] == 200
++    clock[0] += 41
++    assert (await token(provider, code=code))[0] == 400
++    assert root_grant in bridge.revoked
++
++
++async def test_concurrent_code_consumption_cancels_the_replayed_authorization(context):
++    _, store, bridge, _, provider, _ = context
++    code, _ = await approve(provider, *await login(provider))
++    original = provider.transactions.claim
++    barrier = threading.Barrier(2)
++
++    def claim(key, claim_id):
++        if key.startswith("code/"):
++            barrier.wait(timeout=5)
++        return original(key, claim_id)
++
++    provider.transactions.claim = claim
++    a, b = await asyncio.gather(token(provider, code=code), token(provider, code=code))
++    assert 400 in (a[0], b[0])
++    from fulcra_mcp.unblock_state import state_key
++
++    assert store.read(state_key("code", code))[0].get("revocation_requested") is True
++    assert (
++        not bridge.grants
++        or next(iter(bridge.grants.values()))[2].grant_id in bridge.revoked
++    )
++
++
++async def test_pending_revocation_uses_its_frozen_grant_after_the_enrollment_is_revoked(
++    context,
++):
++    _, store, bridge, _, provider, _ = context
++    code, _ = await approve(provider, *await login(provider))
++    bridge.lose_enrollment = True
++    assert (await token(provider, code=code))[0] == 400
++    bridge.lose_revocation = True
++    bridge.lose_revocation_readback = True
++    assert (await token(provider, code=code))[0] == 400
++    assert bridge.revoked
++    assert (await token(provider, code=code))[0] == 400
++    from fulcra_mcp.unblock_state import state_key
++
++    cleanup = store.read(state_key("revoke", state_key("code", code)))[0]
++    assert cleanup["status"] == "completed"
++
++
++async def test_known_refresh_receipt_recovers_after_a_lost_metadata_write_without_another_grant(
++    context, monkeypatch
++):
++    clock, store, bridge, _, provider, replacement = context
++    code, _ = await approve(provider, *await login(provider))
++    first = (await token(provider, code=code))[1]
++    import test_unblock_state as state_helpers
++
++    original = state_helpers.Blob.upload_from_string
++    armed = [True]
++
++    def upload(blob, data, **kwargs):
++        result = original(blob, data, **kwargs)
++        if armed[0] and "/access/" in blob.name:
++            armed[0] = False
++            blob.backend.unavailable = True
++            raise OSError("lost committed metadata response")
++        return result
++
++    monkeypatch.setattr(state_helpers.Blob, "upload_from_string", upload)
++    clock[0] += 20
++    assert (await token(provider, refresh=first["refresh_token"]))[0] == 400
++    assert len(bridge.grants) == 2
++    store._bucket.unavailable = False
++    clock[0] += 5
++    status, recovered = await token(replacement(), refresh=first["refresh_token"])
++    assert status == 200 and recovered["expires_in"] == 95
++    assert len(bridge.grants) == 2
++
++
++async def test_original_provider_and_new_resource_reject_each_others_tokens(
++    context, monkeypatch, tmp_path
++):
++    from fulcra_mcp.provider import FulcraOAuthProvider
++    from fulcra_mcp.settings import settings
++
++    monkeypatch.setattr(settings, "state_path", tmp_path)
++    original = FulcraOAuthProvider(issuer_url="https://issuer.invalid")
++    credentials = FulcraCredentials(
++        access_token="synthetic-original-owner",
++        access_token_expiration=datetime.fromtimestamp(context[0][0] + 500),
++    )
++    grant = original._new_grant(credentials)
++    old = original._issue_tokens("original-client", ["openid"], grant)
++    assert await original.load_access_token(old.access_token) is not None
++    provider = context[4]
++    assert await provider.load_access_token(old.access_token) is None
++    code, _ = await approve(provider, *await login(provider))
++    native = (await token(provider, code=code))[1]["access_token"]
++    assert await provider.load_access_token(native) is not None
++    assert await original.load_access_token(native) is None
++
++
++async def test_pilot_policy_rejects_unlisted_resources_before_upstream_sign_in(context):
++    _, store, bridge, vault, _, _ = context
++
++    def forbidden():
++        pytest.fail("unlisted resource reached upstream sign-in")
++
++    provider = UnblockProvider(
++        store,
++        bridge,
++        vault,
++        issuer_origin="https://issuer.invalid",
++        upstream_factory=forbidden,
++        now=lambda: context[0][0],
++        allowed_resources=[RESOURCE_A],
++    )
++    params = AuthorizationParams(
++        state="state",
++        scopes=["unblock:worker"],
++        code_challenge=CHALLENGE,
++        redirect_uri="https://client.invalid/callback",
++        redirect_uri_provided_explicitly=True,
++        resource=RESOURCE_B,
++    )
++    from mcp.server.auth.provider import AuthorizeError
++
++    with pytest.raises(AuthorizeError):
++        await provider.authorize(CLIENT, params)
++
++
++@pytest.mark.parametrize("failure", ["response", "receipt_write"])
++async def test_lost_renewal_receipt_reconciles_exact_intent_after_replacement(
++    context, monkeypatch, failure
++):
++    from fulcra_mcp.unblock_state import state_key
++
++    clock, store, bridge, vault, provider, replacement = context
++    code, _ = await approve(provider, *await login(provider))
++    first = (await token(provider, code=code))[1]
++    if failure == "response":
++        bridge.lose_enrollment = True
++    else:
++        checkpoint = provider._checkpoint
++
++        async def lost_checkpoint(key, claim, name, value):
++            if name == "native_receipt":
++                raise OSError("process ended before renewal receipt persistence")
++            return await checkpoint(key, claim, name, value)
++
++        monkeypatch.setattr(provider, "_checkpoint", lost_checkpoint)
++    clock[0] += 20
++    assert (await token(provider, refresh=first["refresh_token"]))[0] == 400
++    key = state_key("refresh", first["refresh_token"])
++    row = store.read(key)[0]
++    assert row["status"] == "uncertain"
++    assert set(row["checkpoints"]) == {"native_intent"}
++    frozen_intent = row["checkpoints"]["native_intent"]
++    assert len(bridge.grants) == 2
++    reconciled = []
++    reconcile = bridge.reconcile_enrollment
++
++    async def observed(binding, owner, intent):
++        reconciled.append(intent)
++        return await reconcile(binding, owner, intent)
++
++    monkeypatch.setattr(bridge, "reconcile_enrollment", observed)
++
++    async def no_new_effect(*args, **kwargs):
++        pytest.fail(
++            "recovery repeated upstream refresh or allocated another native intent"
++        )
++
++    monkeypatch.setattr(vault, "refresh", no_new_effect)
++    monkeypatch.setattr(bridge, "prepare_enrollment", no_new_effect)
++    clock[0] += 5
++    status, recovered = await token(replacement(), refresh=first["refresh_token"])
++    assert status == 200 and recovered["expires_in"] == 95
++    assert reconciled == [frozen_intent]
++    assert (
++        recovered["access_token"]
++        == bridge.grants[frozen_intent["intent_id"]][2].credential
++    )
++    assert len(bridge.grants) == 2 and store.read(key)[0]["status"] == "completed"
++
++
++async def test_unknown_renewal_retains_intent_without_reenrollment(
++    context, monkeypatch
++):
++    from fulcra_mcp.unblock_state import state_key
++
++    _, store, bridge, _, provider, replacement = context
++    code, _ = await approve(provider, *await login(provider))
++    first = (await token(provider, code=code))[1]
++    bridge.lose_enrollment = True
++    assert (await token(provider, refresh=first["refresh_token"]))[0] == 400
++    key = state_key("refresh", first["refresh_token"])
++    before = store.read(key)[0]
++
++    async def unknown(*args):
++        return None
++
++    monkeypatch.setattr(bridge, "reconcile_enrollment", unknown)
++    assert (await token(replacement(), refresh=first["refresh_token"]))[0] == 400
++    assert store.read(key)[0] == before and len(bridge.grants) == 2
+diff --git a/tests/test_unblock_resource.py b/tests/test_unblock_resource.py
+new file mode 100644
+index 0000000..3b58bd8
+--- /dev/null
++++ b/tests/test_unblock_resource.py
+@@ -0,0 +1,182 @@
++"""Resource substitution must never reach an external token-issuance effect."""
++
++import asyncio
++import base64
++import hashlib
++import json
++import time
++from urllib.parse import urlencode
++
++import pytest
++from fulcra_mcp.unblock_resource import ResourceTokenHandler
++from mcp.server.auth.provider import AuthorizationCode, RefreshToken
++from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
++from starlette.requests import Request
++
++RESOURCE = "https://dashboard.invalid/mcp"
++OTHER = "https://other.invalid/mcp"
++VERIFIER = "v" * 43
++CHALLENGE = (
++    base64.urlsafe_b64encode(hashlib.sha256(VERIFIER.encode()).digest())
++    .decode()
++    .rstrip("=")
++)
++CLIENT = OAuthClientInformationFull(
++    client_id="test-client",
++    redirect_uris=["https://client.invalid/callback"],
++    grant_types=["authorization_code", "refresh_token"],
++)
++
++
++class BoundRefresh(RefreshToken):
++    resource: str | None = RESOURCE
++
++
++class Authenticator:
++    async def authenticate_request(self, request):
++        return CLIENT
++
++
++class Provider:
++    def __init__(self, bound=RESOURCE):
++        self.bound = bound
++        self.effects = []
++
++    async def load_authorization_code(self, client, code):
++        await asyncio.sleep(0)
++        return AuthorizationCode(
++            code=code,
++            client_id=CLIENT.client_id,
++            scopes=["unblock:worker"],
++            expires_at=time.time() + 60,
++            code_challenge=CHALLENGE,
++            redirect_uri="https://client.invalid/callback",
++            redirect_uri_provided_explicitly=True,
++            resource=self.bound,
++        )
++
++    async def exchange_authorization_code(self, client, code):
++        await asyncio.sleep(0)
++        self.effects.append("code-issued")
++        return OAuthToken(
++            access_token="synthetic-unused", token_type="Bearer", expires_in=60
++        )
++
++    async def load_refresh_token(self, client, token):
++        return BoundRefresh(
++            token=token,
++            client_id=CLIENT.client_id,
++            scopes=["unblock:worker"],
++            expires_at=int(time.time()) + 60,
++            resource=self.bound,
++        )
++
++    async def exchange_refresh_token(self, client, token, scopes):
++        await asyncio.sleep(0)
++        self.effects.append("refresh-issued")
++        return OAuthToken(
++            access_token="synthetic-unused", token_type="Bearer", expires_in=60
++        )
++
++
++def form(grant, resources):
++    items = [("grant_type", grant), ("client_id", CLIENT.client_id)]
++    if grant == "authorization_code":
++        items += [
++            ("code", "synthetic-code"),
++            ("redirect_uri", "https://client.invalid/callback"),
++            ("code_verifier", VERIFIER),
++        ]
++    else:
++        items.append(("refresh_token", "synthetic-refresh"))
++    return items + [("resource", resource) for resource in resources]
++
++
++async def issue(provider, grant, resources, *, handler=None, overrides=None):
++    items = form(grant, resources)
++    if overrides:
++        items = [(key, overrides.get(key, value)) for key, value in items]
++    body = urlencode(items).encode()
++
++    async def receive():
++        return {"type": "http.request", "body": body, "more_body": False}
++
++    request = Request(
++        {
++            "type": "http",
++            "method": "POST",
++            "path": "/token",
++            "headers": [(b"content-type", b"application/x-www-form-urlencoded")],
++            "query_string": b"",
++        },
++        receive,
++    )
++    return await (handler or ResourceTokenHandler(provider, Authenticator())).handle(
++        request
++    )
++
++
++@pytest.mark.parametrize(
++    "grant,resources,want",
++    [
++        ("authorization_code", [RESOURCE], 200),
++        ("authorization_code", [OTHER], 400),
++        ("authorization_code", [], 400),
++        ("authorization_code", [""], 400),
++        ("authorization_code", [RESOURCE, RESOURCE], 400),
++        ("authorization_code", [OTHER, RESOURCE], 400),
++        ("refresh_token", [RESOURCE], 200),
++        ("refresh_token", [], 200),
++        ("refresh_token", [OTHER], 400),
++        ("refresh_token", [""], 400),
++        ("refresh_token", [RESOURCE, RESOURCE], 400),
++        ("refresh_token", [OTHER, RESOURCE], 400),
++    ],
++)
++async def test_resource_checked_before_issuance(grant, resources, want):
++    provider = Provider()
++    response = await issue(provider, grant, resources)
++    assert response.status_code == want
++    if want == 400:
++        assert provider.effects == []
++        assert json.loads(response.body)["error"] in [
++            "invalid_request",
++            "invalid_grant",
++        ]
++    else:
++        assert len(provider.effects) == 1
++
++
++@pytest.mark.parametrize("grant", ["authorization_code", "refresh_token"])
++async def test_missing_stored_binding_denies_before_issuance(grant):
++    provider = Provider(bound=None)
++    response = await issue(provider, grant, [RESOURCE])
++    assert response.status_code == 400
++    assert provider.effects == []
++
++
++async def test_concurrent_requests_do_not_share_requested_resource():
++    provider = Provider()
++    handler = ResourceTokenHandler(provider, Authenticator())
++    good, bad = await asyncio.gather(
++        issue(provider, "authorization_code", [RESOURCE], handler=handler),
++        issue(provider, "authorization_code", [OTHER], handler=handler),
++    )
++    assert (good.status_code, bad.status_code) == (200, 400)
++    assert provider.effects == ["code-issued"]
++
++
++@pytest.mark.parametrize(
++    "overrides",
++    [
++        {"redirect_uri": "https://other.invalid/callback"},
++        {"code_verifier": "wrong-verifier"},
++    ],
++)
++async def test_resource_guard_preserves_sdk_redirect_and_pkce_validation(overrides):
++    provider = Provider()
++    response = await issue(
++        provider, "authorization_code", [RESOURCE], overrides=overrides
++    )
++    assert response.status_code == 400
++    assert provider.effects == []
+diff --git a/tests/test_unblock_state.py b/tests/test_unblock_state.py
+new file mode 100644
+index 0000000..8bb9771
+--- /dev/null
++++ b/tests/test_unblock_state.py
+@@ -0,0 +1,298 @@
++"""Generation-aware fake GCS boundary; this is not a live bucket probe."""
++
++import json
++import threading
++from concurrent.futures import ThreadPoolExecutor
++
++import pytest
++from google.api_core.exceptions import Forbidden, NotFound, PreconditionFailed
++
++from fulcra_mcp.unblock_state import (
++    StateStore,
++    Transactions,
++    StateConflict,
++    StateUnavailable,
++    StateInvalid,
++    configured_store,
++    state_key,
++)
++
++
++class Backend:
++    def __init__(self):
++        self.lock = threading.Lock()
++        self.records = {}
++        self.next_generation = 1
++        self.before_download = None
++        self.unavailable = False
++        self.calls = 0
++        self.hide_upload_generation = False
++
++    def blob(self, name):
++        return Blob(self, name)
++
++    def exists(self, *, timeout):
++        return not self.unavailable
++
++
++class Blob:
++    def __init__(self, backend, name):
++        self.backend, self.name, self.generation = backend, name, None
++
++    def reload(self, *, timeout):
++        with self.backend.lock:
++            self.backend.calls += 1
++            if self.backend.unavailable:
++                raise Forbidden("synthetic-sensitive-value")
++            if self.name not in self.backend.records:
++                raise NotFound("missing")
++            self.generation = self.backend.records[self.name][1]
++
++    def download_as_bytes(self, *, if_generation_match, timeout, retry):
++        if self.backend.before_download:
++            action, self.backend.before_download = self.backend.before_download, None
++            action()
++        with self.backend.lock:
++            raw, generation = self.backend.records[self.name]
++            if generation != if_generation_match:
++                raise PreconditionFailed("changed generation")
++            return raw
++
++    def upload_from_string(
++        self, data, *, content_type, if_generation_match, timeout, retry
++    ):
++        assert content_type == "application/json"
++        with self.backend.lock:
++            self.backend.calls += 1
++            if self.backend.unavailable:
++                raise Forbidden("synthetic-sensitive-value")
++            old = self.backend.records.get(self.name)
++            if (old[1] if old else 0) != if_generation_match:
++                raise PreconditionFailed("changed generation")
++            generation = self.backend.next_generation
++            self.backend.next_generation += 1
++            self.backend.records[self.name] = (
++                data.encode() if isinstance(data, str) else data,
++                generation,
++            )
++            self.generation = (
++                None if self.backend.hide_upload_generation else generation
++            )
++
++
++@pytest.fixture
++def stores():
++    backend = Backend()
++    return backend, StateStore(backend), StateStore(backend)
++
++
++KEY = state_key("code", "synthetic-secret-not-in-object-name")
++BINDING = {
++    "subject": "human-a",
++    "client_id": "client",
++    "resource": "https://a.invalid/mcp",
++}
++
++
++def test_create_read_replace_survive_a_different_instance(stores):
++    backend, first, replacement = stores
++    generation = first.create(KEY, {"status": "pending", "binding": BINDING})
++    row, read_generation = replacement.read(KEY)
++    assert row["binding"]["subject"] == "human-a"
++    assert read_generation == generation
++    replacement.replace(KEY, {**row, "status": "claimed"}, generation)
++    assert first.read(KEY)[0]["status"] == "claimed"
++    assert all(
++        "synthetic-secret-not-in-object-name" not in name for name in backend.records
++    )
++
++
++def test_create_does_not_overwrite_and_stale_replace_loses(stores):
++    _, first, second = stores
++    generation = first.create(KEY, {"winner": "first"})
++    with pytest.raises(StateConflict):
++        second.create(KEY, {"winner": "second"})
++    first.replace(KEY, {"winner": "new"}, generation)
++    with pytest.raises(StateConflict):
++        second.replace(KEY, {"winner": "stale"}, generation)
++    assert second.read(KEY)[0] == {"winner": "new"}
++
++
++def test_two_clients_cannot_both_win_the_same_generation(stores):
++    _, first, second = stores
++    generation = first.create(KEY, {"winner": None})
++    barrier = threading.Barrier(2)
++
++    def attempt(store, name):
++        barrier.wait()
++        try:
++            store.replace(KEY, {"winner": name}, generation)
++            return True
++        except StateConflict:
++            return False
++
++    with ThreadPoolExecutor(2) as pool:
++        results = [pool.submit(attempt, first, "a"), pool.submit(attempt, second, "b")]
++        assert sorted(f.result() for f in results) == [False, True]
++    assert first.read(KEY)[0]["winner"] in ["a", "b"]
++
++
++def test_read_cannot_combine_old_metadata_with_changed_bytes(stores):
++    backend, first, second = stores
++    generation = first.create(KEY, {"version": "old"})
++    backend.before_download = lambda: second.replace(
++        KEY, {"version": "new"}, generation
++    )
++    with pytest.raises(StateConflict):
++        first.read(KEY)
++    assert first.read(KEY)[0] == {"version": "new"}
++
++
++def test_unavailable_source_is_not_an_empty_state_or_a_secret_error(stores):
++    backend, first, _ = stores
++    backend.unavailable = True
++    with pytest.raises(StateUnavailable) as caught:
++        first.read(KEY)
++    assert "synthetic-sensitive-value" not in str(caught.value)
++
++
++@pytest.mark.parametrize("key", ["../secret", "code/raw-token", "/code/" + "a" * 64])
++def test_invalid_keys_never_reach_storage(stores, key):
++    backend, first, _ = stores
++    with pytest.raises(StateInvalid):
++        first.create(key, {"x": 1})
++    assert backend.calls == 0
++
++
++def test_missing_bucket_configuration_fails_before_adc(monkeypatch):
++    from fulcra_mcp import unblock_state
++
++    monkeypatch.setattr(unblock_state.settings, "state_bucket", None)
++
++    def adc_is_not_authorized():
++        pytest.fail(
++            "must not discover ambient credentials without bucket configuration"
++        )
++
++    monkeypatch.setattr(unblock_state.storage, "Client", adc_is_not_authorized)
++    with pytest.raises(StateUnavailable):
++        configured_store()
++
++
++def test_unknown_upload_result_is_retained_and_can_be_read(stores):
++    backend, first, second = stores
++    backend.hide_upload_generation = True
++    with pytest.raises(StateUnavailable):
++        first.create(KEY, {"intent": "retained"})
++    assert second.read(KEY)[0] == {"intent": "retained"}
++
++
++def test_expired_transaction_is_retained_but_cannot_be_claimed(stores):
++    _, store, _ = stores
++    clock = [100]
++    transactions = Transactions(store, now=lambda: clock[0])
++    transactions.begin(KEY, BINDING, 120)
++    clock[0] = 121
++    with pytest.raises(StateConflict):
++        transactions.claim(KEY, "claim-a")
++    assert store.read(KEY)[0]["status"] == "pending"
++
++
++def test_same_client_two_humans_keep_separate_transactions(stores):
++    _, store, other_store = stores
++    a, b = (
++        Transactions(store, now=lambda: 100),
++        Transactions(other_store, now=lambda: 100),
++    )
++    second_key = state_key("code", "second-human-secret")
++    a.begin(KEY, BINDING, 200)
++    b.begin(second_key, {**BINDING, "subject": "human-b"}, 200)
++    a.claim(KEY, "claim-a")
++    b.claim(second_key, "claim-b")
++    assert store.read(KEY)[0]["binding"]["subject"] == "human-a"
++    assert store.read(second_key)[0]["binding"]["subject"] == "human-b"
++
++
++def test_claim_is_one_time_across_instances(stores):
++    _, store, other = stores
++    a, b = Transactions(store, now=lambda: 100), Transactions(other, now=lambda: 100)
++    a.begin(KEY, BINDING, 200)
++    a.claim(KEY, "claim-a")
++    with pytest.raises(StateConflict):
++        b.claim(KEY, "claim-b")
++    assert store.read(KEY)[0]["claim_id"] == "claim-a"
++
++
++def test_uncertain_effect_cannot_be_reclaimed_and_checked_settlement_preserves_history(
++    stores,
++):
++    _, store, other = stores
++    clock = [100]
++    a = Transactions(store, now=lambda: clock[0])
++    a.begin(KEY, BINDING, 120)
++    a.claim(KEY, "claim-a")
++    a.finish(KEY, "claim-a", "uncertain", {"intent": "enrollment-1", "receipt": None})
++    clock[0] = 500
++    b = Transactions(other, now=lambda: clock[0])
++    with pytest.raises(StateConflict):
++        b.claim(KEY, "claim-b")
++    b.finish(
++        KEY, "claim-a", "completed", {"intent": "enrollment-1", "receipt": "verified"}
++    )
++    row = store.read(KEY)[0]
++    assert row["result"]["receipt"] == "verified"
++    assert row["history"][-2]["result"]["receipt"] is None
++    assert row["binding"] == BINDING
++
++
++def test_finish_retry_is_exact_and_cannot_change_a_completed_result(stores):
++    _, store, _ = stores
++    transactions = Transactions(store, now=lambda: 100)
++    transactions.begin(KEY, BINDING, 200)
++    transactions.claim(KEY, "claim-a")
++    transactions.finish(KEY, "claim-a", "completed", {"grant": "one"})
++    before = store.read(KEY)
++    transactions.finish(KEY, "claim-a", "completed", {"grant": "one"})
++    assert store.read(KEY) == before
++    with pytest.raises(StateConflict):
++        transactions.finish(KEY, "claim-a", "completed", {"grant": "two"})
++    with pytest.raises(StateConflict):
++        transactions.finish(KEY, "claim-b", "completed", {"grant": "one"})
++    assert store.read(KEY) == before
++
++
++def test_malformed_source_is_unavailable_not_missing(stores):
++    backend, store, _ = stores
++    store.create(KEY, {"valid": True})
++    name = next(iter(backend.records))
++    backend.records[name] = (b"[]", backend.records[name][1])
++    with pytest.raises(StateUnavailable):
++        store.read(KEY)
++
++
++def test_effect_checkpoint_is_frozen_before_use_and_retained_through_completion(stores):
++    _, store, replacement = stores
++    tx = Transactions(store, now=lambda: 100)
++    tx.begin(KEY, BINDING, 200)
++    tx.claim(KEY, "claim-a")
++    tx.checkpoint(
++        KEY, "claim-a", "native_intent", {"intent_id": "one", "expires_at": 180}
++    )
++    observed = store.read(KEY)
++    tx.checkpoint(
++        KEY, "claim-a", "native_intent", {"intent_id": "one", "expires_at": 180}
++    )
++    assert store.read(KEY) == observed
++    with pytest.raises(StateConflict):
++        tx.checkpoint(
++            KEY, "claim-a", "native_intent", {"intent_id": "two", "expires_at": 180}
++        )
++    with pytest.raises(StateConflict):
++        tx.checkpoint(KEY, "claim-b", "receipt", {"grant_id": "foreign"})
++    Transactions(replacement, now=lambda: 100).finish(
++        KEY, "claim-a", "completed", {"receipt": "verified"}
++    )
++    assert store.read(KEY)[0]["checkpoints"]["native_intent"] == {
++        "intent_id": "one",
++        "expires_at": 180,
++    }
