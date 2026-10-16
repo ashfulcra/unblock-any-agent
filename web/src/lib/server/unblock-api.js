@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
-import { canonicalRecord, projectEvents, readEvents, stableId, sealAgent, openAgent, authorizeAgent, enrollmentRecord, grantScope } from './unblock-core.js';
+import { canonicalRecord, projectEvents, readEvents, stableId, sealAgent, openAgent, validateAgentCredential, authorizeAgent, enrollmentRecord, grantScope } from './unblock-core.js';
 import {projectExpectations} from './unblock-expectations.js';
 
 export class NativeSourceError extends Error {
@@ -65,7 +65,10 @@ export function createService(config) {
       const body=input.body || {};
       const agent=!!input.token;
       /** @type {any} */ let grant;
-      if (agent) grant=openAgent(input.token,config.key);
+      if (agent) {
+        grant=openAgent(input.token,config.key);
+        validateAgentCredential(grant,config.ownerId,now());
+      }
       const token=agent?grant.upstream:input.cookieToken;
       if (!token) throw new Error('Authentication required');
       const user=await upstream(token,'user/v1alpha1/info');
