@@ -12,10 +12,10 @@ index bddd5a0..32d6f0f 100644
 +The disabled-by-default [Unblock issuer candidate](docs/unblock-issuer.md) adds explicit worker consent using the existing Fulcra callback and configuration. Source tests and native bridge evidence are separate from live issuer and ChatGPT web acceptance.
 diff --git a/docs/unblock-issuer.md b/docs/unblock-issuer.md
 new file mode 100644
-index 0000000..c73f635
+index 0000000..a142908
 --- /dev/null
 +++ b/docs/unblock-issuer.md
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,74 @@
 +# Optional Unblock resource issuer
 +
 +This is source preparation for an isolated Unblock authorization branch. It is disabled by default. No production issuer deployment, real GCS transaction acceptance or actual ChatGPT web connection is established by this change.
@@ -55,6 +55,41 @@ index 0000000..c73f635
 +Local tests cover the HTTP lifecycle with synthetic external authentication and generation-aware storage doubles. The original service's pre-existing skips, expected failures and Starlette warning remain reported separately. The implementation plan and broader host acceptance live in [ashfulcra/unblock-any-agent](https://github.com/ashfulcra/unblock-any-agent).
 +
 +The consent cookie uses Secure, HttpOnly, `__Host-`, Path=/ and SameSite=Lax for the top-level cross-site sign-in return. Explicit POST Origin, per-transaction cookie and nonce checks protect approval. A controlled real-browser callback/redirect probe omitted the Strict cookie and included the Lax cookie; this is separate from actual Fulcra login acceptance. [Browser cookie behavior](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie).
++
++## Operator acceptance commands
++
++These operator-only commands run from this pinned, patched checkout inside an authorized issuer/test environment. They are not worker tools and install no scheduler. Existing Google credentials and explicit bucket authority must already be available; neither command starts an interactive login or creates a bucket/client/IAM permission.
++
++### Disposable GCS check
++
++Use a bucket and dedicated `unblock-acceptance/<label>` prefix authorized for disposable objects. The command creates a fresh UUID subdirectory and exactly two hashed objects, using two independently constructed GCS clients and the actual `StateStore`/`Transactions` adapter. It checks conditional creation, stale-write denial, one concurrent generation winner, one transaction claimant and replacement readback. Generation-conditional cleanup verifies the exact run marker and then actual absence. It never lists or deletes the issuer's production namespace.
++
++```sh
++uv run --locked python -m fulcra_mcp.unblock_probe \
++  --bucket AUTHORIZED_TEST_BUCKET --prefix unblock-acceptance/pilot \
++  --report /PRIVATE/new-gcs-probe.json
++```
++
++The private mode0600 report is created before credential discovery or any object effect. The report path must be new. Exit0 means all five source checks and cleanup passed. Any failed or unknown check returns nonzero; `cleanup_pending` preserves exact object names. A generation-aware fake passing the same command logic is local evidence only, not GCS acceptance.
++
++For a retained cleanup obligation, repeat the same target/report with `--cleanup-only`. This validates the frozen manifest and own run marker, and performs no new probe. An unavailable source, foreign marker or generation conflict retains the obligation. `cleanup_complete` establishes only cleanup; the prior probe outcome remains in `prior_status` and its original checks.
++
++### Inspect and reconcile known pending roots
++
++An authorized operator obtains hashed `code/<sha256>` keys from the existing bucket's `unblock/v1/code/` object names or retained service evidence. These are internal references, not bearer authorization codes. Supply only the specific keys under investigation, at most64 per invocation, and the exact approved dashboard resource. The command does not enumerate new work and its result covers only those keys.
++
++```sh
++uv run --locked python -m fulcra_mcp.unblock_operator \
++  --resource https://YOUR-DASHBOARD.my.fulcra.ai/mcp \
++  --code-key code/HASH_FROM_AUTHORIZED_SOURCE \
++  --report /PRIVATE/new-pending-inspection.json
++```
++
++Inspection is read-only by default. It emits only allowlisted state/action labels and hashed keys; raw records, owner references, subjects, requester text and credentials are excluded. Source failure or missing/mismatched state is unresolved, never an empty queue. Keep earlier reports as continuity evidence.
++
++For a root that already has `revocation_requested=true`, add `--recover-revocations` with a new report path. The report freezes the requested keys/resource before effects. The provider rechecks that exact resource before its existing source-checked cleanup. It cannot authorize a new revocation, resume token issuance, allocate a fresh enrollment intent or take over an unknown upstream refresh. A false/failed cleanup remains pending; only source-verified cleanup is reported as verified.
++
++Run another finite inspection with a new report when the prerequisite changes. A separately authorized service process/scheduler may invoke these checks with an explicit key set and must retain nonzero results and earlier reports. No continuous receiver, discovery coverage, scheduled lifetime or actual ChatGPT pickup is established by these commands.
 diff --git a/fulcra_mcp/main.py b/fulcra_mcp/main.py
 index 273e0c9..75fa0d5 100644
 --- a/fulcra_mcp/main.py
@@ -862,6 +897,252 @@ index 0000000..fcf052f
 +    except Exception:
 +        logger.warning("unblock_issuer_disabled_configuration_unavailable")
 +        return None
+diff --git a/fulcra_mcp/unblock_operator.py b/fulcra_mcp/unblock_operator.py
+new file mode 100644
+index 0000000..694c68c
+--- /dev/null
++++ b/fulcra_mcp/unblock_operator.py
+@@ -0,0 +1,169 @@
++"""One-shot scoped observations and explicit already-requested revocation recovery.
++
++Run in the authorized issuer environment. This is not a public endpoint, a
++credential-renewal mechanism, a record-discovery service or installed receiver.
++"""
++
++import argparse
++import asyncio
++import json
++import re
++from urllib.parse import urlsplit
++
++from .settings import settings
++from .unblock_bridge import NativeBridge, _origin
++from .unblock_owner import OwnerVault
++from .unblock_provider import UnblockProvider
++from .unblock_state import configured_store
++from .unblock_ops_report import write_report
++
++
++def validate(code_keys, resource):
++    parts = urlsplit(resource)
++    if resource != _origin(parts.hostname or "") + "/mcp":
++        raise ValueError("exact canonical dashboard resource required")
++    if (
++        not 1 <= len(code_keys) <= 64
++        or len(set(code_keys)) != len(code_keys)
++        or any(
++            not isinstance(key, str) or not re.fullmatch(r"code/[a-f0-9]{64}", key)
++            for key in code_keys
++        )
++    ):
++        raise ValueError("one to64 distinct hashed code keys required")
++
++
++async def inspect_keys(provider, code_keys, resource, *, recover=False):
++    validate(code_keys, resource)
++    items = []
++    for key in code_keys:
++        item = {
++            "key": key,
++            "state": "source_unknown",
++            "action": "restore_source_and_retry_same_keys",
++        }
++        try:
++            observed = await provider._read(key)
++            if observed is None:
++                item.update(
++                    state="not_found",
++                    action="verify_original_source_and_retained_intent",
++                )
++            else:
++                row = observed[0]
++                if (
++                    not isinstance(row.get("binding"), dict)
++                    or row["binding"].get("resource") != resource
++                ):
++                    item.update(
++                        state="scope_mismatch", action="use_the_authorized_resource"
++                    )
++                elif (
++                    row.get("status")
++                    not in ["pending", "claimed", "uncertain", "completed"]
++                    or type(row.get("revocation_requested", False)) is not bool
++                    or type(row.get("expires_at")) is not int
++                    or not isinstance(row.get("history"), list)
++                    or not isinstance(row.get("checkpoints"), dict)
++                    or row["binding"].get("root_code_key") != key
++                    or (
++                        row.get("status") == "completed"
++                        and not isinstance(row.get("result"), dict)
++                    )
++                ):
++                    item.update(
++                        state="source_unknown",
++                        action="inspect_invalid_state_without_repeating_effects",
++                    )
++                elif row.get("revocation_requested"):
++                    item.update(
++                        state="revocation_pending",
++                        action="reconcile_requested_revocation",
++                    )
++                    if recover and await provider.recover_pending_code(
++                        key, expected_resource=resource
++                    ):
++                        item.update(state="revocation_verified", action="none")
++                else:
++                    state = row["status"]
++                    item.update(
++                        state=state,
++                        action="none"
++                        if state == "completed"
++                        else "inspect_pending_effect_or_reconnect",
++                    )
++        except Exception:
++            # A cleanup may already have happened. Preserve the key as unknown;
++            # never expose raw provider exceptions or credentials in a report.
++            item.update(
++                state="source_unknown", action="restore_source_and_retry_same_keys"
++            )
++        items.append(item)
++    unknown = {"source_unknown", "scope_mismatch", "not_found"}
++    status = (
++        "unresolved"
++        if any(item["state"] in unknown for item in items)
++        else (
++            "pending" if any(item["action"] != "none" for item in items) else "checked"
++        )
++    )
++    return {
++        "status": status,
++        "resource": resource,
++        "items": items,
++        "recovery_requested": recover,
++    }
++
++
++def operator_provider(resource):
++    if (
++        not settings.state_bucket
++        or not settings.fulcra_api
++        or not settings.oidc_server_url.startswith("https://")
++    ):
++        raise ValueError("existing issuer configuration required")
++    store = configured_store()
++    return UnblockProvider(
++        store,
++        NativeBridge(settings.fulcra_api),
++        OwnerVault(store),
++        issuer_origin=settings.oidc_server_url,
++        allowed_resources=[resource],
++    )
++
++
++def main(argv=None):
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--resource", required=True)
++    parser.add_argument("--code-key", required=True, action="append")
++    parser.add_argument("--report", required=True)
++    parser.add_argument("--recover-revocations", action="store_true")
++    args = parser.parse_args(argv)
++    validate(args.code_key, args.resource)
++    prepared = {
++        "status": "prepared",
++        "resource": args.resource,
++        "code_keys": args.code_key,
++        "recovery_requested": args.recover_revocations,
++    }
++    write_report(args.report, prepared, create=True)
++    try:
++        provider = operator_provider(args.resource)
++        report = asyncio.run(
++            inspect_keys(
++                provider, args.code_key, args.resource, recover=args.recover_revocations
++            )
++        )
++    except Exception:
++        report = {
++            **prepared,
++            "status": "unresolved",
++            "action": "restore_issuer_source_and_retry_same_keys",
++        }
++    write_report(args.report, report)
++    print(json.dumps({"status": report["status"], "private_report": args.report}))
++    return 0 if report["status"] == "checked" else 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/fulcra_mcp/unblock_ops_report.py b/fulcra_mcp/unblock_ops_report.py
+new file mode 100644
+index 0000000..ec79c4c
+--- /dev/null
++++ b/fulcra_mcp/unblock_ops_report.py
+@@ -0,0 +1,65 @@
++"""Private, atomic operator reports. They never contain bearer material."""
++
++import json
++import os
++import stat
++import tempfile
++from pathlib import Path
++
++
++def sync_directory(path):
++    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
++    try:
++        os.fsync(fd)
++    finally:
++        os.close(fd)
++
++
++def write_report(path, value, *, create=False):
++    path = Path(path)
++    raw = (json.dumps(value, indent=2, allow_nan=False) + "\n").encode()
++    if create:
++        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
++        with os.fdopen(fd, "wb") as stream:
++            stream.write(raw)
++            stream.flush()
++            os.fsync(stream.fileno())
++        sync_directory(path.parent)
++        return
++    info = path.lstat()
++    if (
++        not stat.S_ISREG(info.st_mode)
++        or info.st_uid != os.getuid()
++        or info.st_mode & 0o077
++    ):
++        raise ValueError("private regular report required")
++    fd, temporary = tempfile.mkstemp(prefix=".unblock-report-", dir=path.parent)
++    try:
++        with os.fdopen(fd, "wb") as stream:
++            stream.write(raw)
++            stream.flush()
++            os.fsync(stream.fileno())
++        os.replace(temporary, path)
++        sync_directory(path.parent)
++    finally:
++        if os.path.exists(temporary):
++            os.unlink(temporary)
++
++
++def read_report(path):
++    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
++    with os.fdopen(fd, "rb") as stream:
++        info = os.fstat(stream.fileno())
++        if (
++            not stat.S_ISREG(info.st_mode)
++            or info.st_uid != os.getuid()
++            or info.st_mode & 0o077
++        ):
++            raise ValueError("private regular report required")
++        raw = stream.read(65537)
++        if len(raw) > 65536:
++            raise ValueError("report too large")
++        value = json.loads(raw)
++        if not isinstance(value, dict):
++            raise ValueError("invalid report")
++        return value
 diff --git a/fulcra_mcp/unblock_owner.py b/fulcra_mcp/unblock_owner.py
 new file mode 100644
 index 0000000..12eb108
@@ -1120,12 +1401,254 @@ index 0000000..12eb108
 +        return OwnerAccess(
 +            replacement.access_token, min(new_expiry, updated["expires_at"])
 +        )
+diff --git a/fulcra_mcp/unblock_probe.py b/fulcra_mcp/unblock_probe.py
+new file mode 100644
+index 0000000..0f8e2dd
+--- /dev/null
++++ b/fulcra_mcp/unblock_probe.py
+@@ -0,0 +1,236 @@
++"""Explicit disposable GCS acceptance probe, separate from live issuer state."""
++
++import argparse
++import json
++import re
++import threading
++import time
++import uuid
++from concurrent.futures import ThreadPoolExecutor
++
++from google.cloud import storage
++from google.cloud.storage.retry import DEFAULT_RETRY_IF_GENERATION_SPECIFIED
++
++from .unblock_ops_report import write_report, read_report
++from .unblock_state import (
++    StateStore,
++    Transactions,
++    StateConflict,
++    state_key,
++    TIMEOUT_SECONDS,
++)
++
++
++def scope(prefix, run_id):
++    if not isinstance(prefix, str) or not re.fullmatch(
++        r"unblock-acceptance/[a-z][a-z0-9-]{0,47}", prefix
++    ):
++        raise ValueError("dedicated unblock-acceptance prefix required")
++    if str(uuid.UUID(run_id)) != run_id:
++        raise ValueError("canonical probe UUID required")
++    return prefix + "/" + run_id + "/"
++
++
++def keys(run_id):
++    return [state_key("probe", run_id + ":cas"), state_key("code", run_id + ":claim")]
++
++
++class ProbeBucket:
++    def __init__(self, bucket, prefix, run_id):
++        self.bucket, self.prefix, self.run_id = bucket, scope(prefix, run_id), run_id
++
++    def blob(self, name):
++        if name not in ["unblock/v1/" + key for key in keys(self.run_id)]:
++            raise ValueError("object outside frozen probe scope")
++        return self.bucket.blob(self.prefix + name)
++
++    def exists(self, **kwargs):
++        return self.bucket.exists(**kwargs)
++
++
++def cleanup(bucket, prefix, run_id):
++    wrapped = ProbeBucket(bucket, prefix, run_id)
++    store, pending = StateStore(wrapped), []
++    for key in keys(run_id):
++        name = wrapped.prefix + "unblock/v1/" + key
++        try:
++            observed = store.read(key)
++            if observed is None:
++                continue
++            row, generation = observed
++            if (
++                row.get("probe_run_id", row.get("binding", {}).get("probe_run_id"))
++                != run_id
++            ):
++                raise ValueError("probe ownership changed")
++            try:
++                wrapped.blob("unblock/v1/" + key).delete(
++                    if_generation_match=generation,
++                    timeout=TIMEOUT_SECONDS,
++                    retry=DEFAULT_RETRY_IF_GENERATION_SPECIFIED,
++                )
++            except Exception:
++                # A lost response can follow deletion; read exact absence first.
++                if store.read(key) is not None:
++                    raise
++            if store.read(key) is not None:
++                raise ValueError("cleanup not observed")
++        except Exception:
++            pending.append(name)
++    return pending
++
++
++def run_probe(bucket_factory, prefix, run_id):
++    root = scope(prefix, run_id)
++    key, transaction_key = keys(run_id)
++    report = {
++        "status": "failed",
++        "run_id": run_id,
++        "prefix": prefix,
++        "objects": [root + "unblock/v1/" + key for key in keys(run_id)],
++        "checks": {},
++        "cleanup_pending": [],
++    }
++    buckets = []
++    try:
++        buckets = [bucket_factory(), bucket_factory()]
++        first, second = [
++            StateStore(ProbeBucket(bucket, prefix, run_id)) for bucket in buckets
++        ]
++        generation = first.create(key, {"probe_run_id": run_id, "winner": None})
++        try:
++            second.create(key, {"probe_run_id": run_id, "winner": "unexpected"})
++        except StateConflict:
++            report["checks"]["conditional_create"] = True
++        if not report["checks"].get("conditional_create"):
++            raise ValueError("conditional create did not conflict")
++        barrier = threading.Barrier(2)
++
++        def replace(store, winner):
++            barrier.wait(timeout=10)
++            try:
++                expected = {"probe_run_id": run_id, "winner": winner}
++                store.replace(key, expected, generation)
++                return expected
++            except StateConflict:
++                return None
++
++        with ThreadPoolExecutor(2) as pool:
++            futures = [
++                pool.submit(replace, store, str(i))
++                for i, store in enumerate([first, second])
++            ]
++            winners = [
++                result for future in futures if (result := future.result()) is not None
++            ]
++            report["checks"]["one_cas_winner"] = (
++                len(winners) == 1
++                and first.read(key)[0] == winners[0]
++                and second.read(key)[0] == winners[0]
++            )
++        try:
++            second.replace(key, {"probe_run_id": run_id, "winner": "stale"}, generation)
++        except StateConflict:
++            report["checks"]["stale_replace_denied"] = True
++        transactions = [Transactions(store) for store in [first, second]]
++        transactions[0].begin(
++            transaction_key, {"probe_run_id": run_id}, int(time.time()) + 120
++        )
++
++        def claim(index):
++            try:
++                expected, _ = transactions[index].claim(
++                    transaction_key, "claim-" + str(index)
++                )
++                return expected
++            except StateConflict:
++                return None
++
++        with ThreadPoolExecutor(2) as pool:
++            futures = [pool.submit(claim, i) for i in range(2)]
++            claims = [
++                result for future in futures if (result := future.result()) is not None
++            ]
++            report["checks"]["one_transaction_claim"] = len(claims) == 1
++        report["checks"]["replacement_readback"] = (
++            len(claims) == 1
++            and second.read(transaction_key)[0] == claims[0]
++            and first.read(transaction_key)[0] == claims[0]
++        )
++        if len(report["checks"]) == 5 and all(report["checks"].values()):
++            report["status"] = "passed"
++    except Exception:
++        report["failure"] = "probe_checks_unresolved_or_failed"
++    finally:
++        report["cleanup_pending"] = (
++            cleanup(buckets[0], prefix, run_id) if buckets else report["objects"]
++        )
++        if report["cleanup_pending"]:
++            report["status"] = "unresolved"
++    return report
++
++
++def bucket_factory(name):
++    return lambda: storage.Client().bucket(name)
++
++
++def main(argv=None):
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--bucket", required=True)
++    parser.add_argument("--prefix", required=True)
++    parser.add_argument("--report", required=True)
++    parser.add_argument("--cleanup-only", action="store_true")
++    args = parser.parse_args(argv)
++    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]", args.bucket):
++        parser.error("explicit bucket name required")
++    if args.cleanup_only:
++        retained = read_report(args.report)
++        if (
++            retained.get("bucket") != args.bucket
++            or retained.get("prefix") != args.prefix
++        ):
++            raise ValueError("cleanup target differs from frozen report")
++        run_id = retained["run_id"]
++        root = scope(args.prefix, run_id)
++        names = [root + "unblock/v1/" + key for key in keys(run_id)]
++        if retained.get("objects") != names:
++            raise ValueError("cleanup object manifest differs")
++        try:
++            pending = cleanup(bucket_factory(args.bucket)(), args.prefix, run_id)
++        except Exception:
++            pending = names
++        report = {
++            **retained,
++            "prior_status": retained.get("prior_status", retained["status"]),
++            "status": "unresolved" if pending else "cleanup_complete",
++            "cleanup_pending": pending,
++        }
++        write_report(args.report, report)
++        print(json.dumps({"status": report["status"], "private_report": args.report}))
++        return 1 if pending else 0
++    run_id = str(uuid.uuid4())
++    root = scope(args.prefix, run_id)
++    prepared = {
++        "status": "prepared",
++        "bucket": args.bucket,
++        "run_id": run_id,
++        "prefix": args.prefix,
++        "objects": [root + "unblock/v1/" + key for key in keys(run_id)],
++    }
++    write_report(args.report, prepared, create=True)
++    try:
++        report = run_probe(bucket_factory(args.bucket), args.prefix, run_id)
++    except Exception:
++        report = {
++            **prepared,
++            "status": "unresolved",
++            "cleanup_pending": prepared["objects"],
++        }
++    report["bucket"] = args.bucket
++    write_report(args.report, report)
++    print(json.dumps({"status": report["status"], "private_report": args.report}))
++    return 0 if report["status"] == "passed" else 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
 diff --git a/fulcra_mcp/unblock_provider.py b/fulcra_mcp/unblock_provider.py
 new file mode 100644
-index 0000000..d3bcc06
+index 0000000..840d842
 --- /dev/null
 +++ b/fulcra_mcp/unblock_provider.py
-@@ -0,0 +1,858 @@
+@@ -0,0 +1,863 @@
 +"""An isolated, optional OAuth issuer branch for one approved native worker.
 +
 +This module neither mounts routes nor discovers credentials at import. The
@@ -1917,9 +2440,14 @@ index 0000000..d3bcc06
 +        await self.vault.request_revocation(row["binding"]["owner_key"])
 +        return await self.recover_pending_code(root)
 +
-+    async def recover_pending_code(self, root):
++    async def recover_pending_code(self, root, *, expected_resource=None):
 +        """Private operator/replay recovery; never a public unauthenticated API."""
 +        row, _ = await self._required(root)
++        if (
++            expected_resource is not None
++            and row["binding"].get("resource") != expected_resource
++        ):
++            return False
 +        if not row.get("revocation_requested"):
 +            return False
 +        binding, checkpoints = row["binding"], row.get("checkpoints", {})
@@ -3010,6 +3538,239 @@ index 0000000..0243889
 +            body["client_secret"] = secret
 +        assert (await client.post("/unblock/revoke", data=body)).status_code == 401
 +        assert not bridge.revoked
+diff --git a/tests/test_unblock_operator.py b/tests/test_unblock_operator.py
+new file mode 100644
+index 0000000..cec3ebf
+--- /dev/null
++++ b/tests/test_unblock_operator.py
+@@ -0,0 +1,164 @@
++"""Operator observations/recovery use real provider state, not owner token output."""
++
++import json
++from types import SimpleNamespace
++
++import pytest
++from test_unblock_provider import context, approve, login, token, RESOURCE_A, RESOURCE_B
++from fulcra_mcp.unblock_state import state_key
++from fulcra_mcp.unblock_operator import inspect_keys, main
++
++
++async def connected(context):
++    provider = context[4]
++    code, _ = await approve(provider, *await login(provider))
++    await token(provider, code=code)
++    return state_key("code", code)
++
++
++async def request_revoke(context, key):
++    row, generation = context[1].read(key)
++    context[1].replace(key, {**row, "revocation_requested": True}, generation)
++
++
++async def test_read_only_default_never_performs_cleanup(context, monkeypatch):
++    key = await connected(context)
++    await request_revoke(context, key)
++
++    async def forbidden(*args, **kwargs):
++        pytest.fail("read-only inspection attempted a native effect")
++
++    monkeypatch.setattr(context[4], "recover_pending_code", forbidden)
++    report = await inspect_keys(context[4], [key], RESOURCE_A)
++    assert (
++        report["status"] == "pending"
++        and report["items"][0]["action"] == "reconcile_requested_revocation"
++    )
++    assert not context[2].revoked
++
++
++async def test_explicit_recovery_only_reconciles_already_requested_revocation(context):
++    key = await connected(context)
++    before = await inspect_keys(context[4], [key], RESOURCE_A, recover=True)
++    assert before["status"] == "checked" and not context[2].revoked
++    await request_revoke(context, key)
++    report = await inspect_keys(context[4], [key], RESOURCE_A, recover=True)
++    assert (
++        report["status"] == "checked"
++        and report["items"][0]["state"] == "revocation_verified"
++    )
++    assert context[2].revoked
++    assert len(context[2].grants) == 1
++
++
++async def test_other_resource_and_unknown_source_never_report_quiet(context):
++    key = await connected(context)
++    await request_revoke(context, key)
++    report = await inspect_keys(context[4], [key], RESOURCE_B, recover=True)
++    assert (
++        report["status"] == "unresolved"
++        and report["items"][0]["state"] == "scope_mismatch"
++    )
++    assert not context[2].revoked
++    context[1]._bucket.unavailable = True
++    unknown = await inspect_keys(context[4], [key], RESOURCE_A, recover=True)
++    assert (
++        unknown["status"] == "unresolved"
++        and unknown["items"][0]["state"] == "source_unknown"
++    )
++    assert not context[2].revoked
++
++
++async def test_pending_cleanup_is_not_success_and_raw_state_never_escapes(context):
++    key = await connected(context)
++    await request_revoke(context, key)
++    context[2].lose_revocation = True
++    context[2].lose_revocation_readback = True
++    report = await inspect_keys(context[4], [key], RESOURCE_A, recover=True)
++    assert report["status"] == "pending"
++    output = json.dumps(report)
++    for secret in [
++        "synthetic-native",
++        "synthetic-access",
++        "synthetic-owner-refresh",
++        "owner_key",
++        "client_id",
++        "subject",
++    ]:
++        assert secret not in output
++
++
++async def test_provider_recovery_rechecks_expected_resource_before_effect(context):
++    key = await connected(context)
++    await request_revoke(context, key)
++    assert (
++        await context[4].recover_pending_code(key, expected_resource=RESOURCE_B)
++        is False
++    )
++    assert not context[2].revoked
++
++
++@pytest.mark.parametrize("keys", [["owner/" + "a" * 64], ["code/" + "a" * 64] * 2, []])
++async def test_rejects_invalid_operator_input_before_source_read(keys):
++    async def forbidden(*args):
++        pytest.fail("invalid key read source")
++
++    with pytest.raises(ValueError):
++        await inspect_keys(SimpleNamespace(_read=forbidden), keys, RESOURCE_A)
++
++
++def test_cli_private_intent_precedes_provider_creation_and_denies_overwrite(
++    tmp_path, monkeypatch
++):
++    import fulcra_mcp.unblock_operator as module
++
++    path = tmp_path / "operator.json"
++    key = "code/" + "a" * 64
++
++    def factory(resource):
++        prepared = json.loads(path.read_text())
++        assert prepared["status"] == "prepared" and prepared["code_keys"] == [key]
++        assert path.stat().st_mode & 0o777 == 0o600
++        raise OSError("secret must remain private")
++
++    monkeypatch.setattr(module, "operator_provider", factory)
++    args = ["--resource", RESOURCE_A, "--code-key", key, "--report", str(path)]
++    assert main(args) == 1
++    value = json.loads(path.read_text())
++    assert value["status"] == "unresolved" and "secret must" not in json.dumps(value)
++    with pytest.raises(FileExistsError):
++        main(args)
++
++
++@pytest.mark.parametrize(
++    "resource",
++    [
++        "http://a.my.fulcra.ai/mcp",
++        "https://a.my.fulcra.ai:443/mcp",
++        "https://user@a.my.fulcra.ai/mcp",
++        "https://a.my.fulcra.ai/mcp?x=1",
++        "https://other.invalid/mcp",
++    ],
++)
++async def test_noncanonical_resources_fail_before_source(resource):
++    async def forbidden(*args):
++        pytest.fail("invalid resource read source")
++
++    with pytest.raises(Exception):
++        await inspect_keys(
++            SimpleNamespace(_read=forbidden),
++            ["code/" + "a" * 64],
++            resource,
++            recover=True,
++        )
++
++
++async def test_malformed_completed_record_is_unknown_not_checked(context):
++    key = await connected(context)
++    row, generation = context[1].read(key)
++    row.pop("checkpoints")
++    context[1].replace(key, row, generation)
++    report = await inspect_keys(context[4], [key], RESOURCE_A, recover=True)
++    assert report["status"] == "unresolved"
++    assert report["items"][0]["state"] == "source_unknown"
++    assert not context[2].revoked
+diff --git a/tests/test_unblock_ops_report.py b/tests/test_unblock_ops_report.py
+new file mode 100644
+index 0000000..2ddf9a5
+--- /dev/null
++++ b/tests/test_unblock_ops_report.py
+@@ -0,0 +1,57 @@
++"""Prepared intent and atomic replacement must sync file and directory."""
++
++import os
++import stat
++import pytest
++from fulcra_mcp.unblock_ops_report import write_report
++
++
++def test_create_and_replace_sync_file_then_directory(tmp_path, monkeypatch):
++    calls = []
++    original = os.fsync
++
++    def sync(fd):
++        calls.append("directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file")
++        original(fd)
++
++    monkeypatch.setattr(os, "fsync", sync)
++    path = tmp_path / "report.json"
++    write_report(path, {"status": "prepared"}, create=True)
++    write_report(path, {"status": "settled"})
++    assert calls == ["file", "directory", "file", "directory"]
++
++
++@pytest.mark.parametrize("command", ["probe", "operator"])
++def test_directory_sync_failure_prevents_client_or_provider_discovery(
++    tmp_path, monkeypatch, command
++):
++    from fulcra_mcp import unblock_probe, unblock_operator
++
++    original = os.fsync
++
++    def sync(fd):
++        if stat.S_ISDIR(os.fstat(fd).st_mode):
++            raise OSError("directory durability unavailable")
++        original(fd)
++
++    monkeypatch.setattr(os, "fsync", sync)
++
++    def forbidden(*args):
++        pytest.fail("effect factory ran before durable intent")
++
++    path = tmp_path / "report.json"
++    if command == "probe":
++        monkeypatch.setattr(unblock_probe, "bucket_factory", forbidden)
++        run = unblock_probe.main
++        args = ["--bucket", "authorized-test", "--prefix", "unblock-acceptance/pilot"]
++    else:
++        monkeypatch.setattr(unblock_operator, "operator_provider", forbidden)
++        run = unblock_operator.main
++        args = [
++            "--resource",
++            "https://a.my.fulcra.ai/mcp",
++            "--code-key",
++            "code/" + "a" * 64,
++        ]
++    with pytest.raises(OSError):
++        run([*args, "--report", str(path)])
 diff --git a/tests/test_unblock_owner.py b/tests/test_unblock_owner.py
 new file mode 100644
 index 0000000..5659d45
@@ -3163,6 +3924,323 @@ index 0000000..5659d45
 +    key = state_key("owner", "frozen-login-transaction")
 +    assert await vault.save(credentials("a", 500), "human-a", 1000, key=key) == key
 +    assert (await vault.load(key)).token == "synthetic-access-a"
+diff --git a/tests/test_unblock_probe.py b/tests/test_unblock_probe.py
+new file mode 100644
+index 0000000..ef443fa
+--- /dev/null
++++ b/tests/test_unblock_probe.py
+@@ -0,0 +1,311 @@
++"""Local probe harness tests; actual GCS acceptance stays separate."""
++
++import json
++from pathlib import Path
++
++import pytest
++from google.api_core.exceptions import Forbidden, PreconditionFailed
++from test_unblock_state import Backend, Blob
++from fulcra_mcp.unblock_probe import run_probe, main
++
++RUN = "11111111-1111-4111-a111-111111111111"
++PREFIX = "unblock-acceptance/pilot"
++
++
++@pytest.fixture
++def backend(monkeypatch):
++    value = Backend()
++
++    def delete(blob, *, if_generation_match, timeout, retry):
++        with blob.backend.lock:
++            row = blob.backend.records.get(blob.name)
++            if row is None or row[1] != if_generation_match:
++                raise PreconditionFailed("changed")
++            del blob.backend.records[blob.name]
++
++    monkeypatch.setattr(Blob, "delete", delete, raising=False)
++    return value
++
++
++def test_two_clients_actual_adapter_probe_cas_claim_and_cleanup(backend):
++    calls = []
++
++    def client():
++        calls.append(True)
++        return backend
++
++    report = run_probe(client, PREFIX, RUN)
++    assert len(calls) == 2
++    assert report["status"] == "passed"
++    assert all(report["checks"].values()) and len(report["checks"]) == 5
++    assert report["cleanup_pending"] == [] and backend.records == {}
++    assert all(
++        name.startswith(PREFIX + "/" + RUN + "/unblock/v1/")
++        for name in report["objects"]
++    )
++
++
++@pytest.mark.parametrize(
++    "prefix", ["unblock/v1", "../pilot", "unblock-acceptance/pilot/../x", ""]
++)
++def test_invalid_scope_rejected_before_client_discovery(prefix):
++    def forbidden():
++        pytest.fail("invalid prefix discovered credentials")
++
++    with pytest.raises(ValueError):
++        run_probe(forbidden, prefix, RUN)
++
++
++def test_unavailable_source_keeps_cleanup_unknown(backend):
++    backend.unavailable = True
++    report = run_probe(lambda: backend, PREFIX, RUN)
++    assert report["status"] == "unresolved"
++    assert len(report["cleanup_pending"]) == 2
++    assert "synthetic-sensitive-value" not in json.dumps(report)
++
++
++def test_lost_successful_create_response_cleans_only_its_own_objects(
++    backend, monkeypatch
++):
++    original = Blob.upload_from_string
++
++    def lost(blob, *args, **kwargs):
++        original(blob, *args, **kwargs)
++        raise OSError("private-credential-must-not-print")
++
++    monkeypatch.setattr(Blob, "upload_from_string", lost)
++    report = run_probe(lambda: backend, PREFIX, RUN)
++    assert report["status"] == "failed"
++    assert report["cleanup_pending"] == [] and not backend.records
++    assert "private-credential" not in json.dumps(report)
++
++
++def test_foreign_marker_is_not_deleted_and_cleanup_remains_pending(
++    backend, monkeypatch
++):
++    original = Blob.upload_from_string
++
++    def foreign(blob, data, **kwargs):
++        original(blob, json.dumps({"probe_run_id": "another-run"}), **kwargs)
++        raise OSError("lost")
++
++    monkeypatch.setattr(Blob, "upload_from_string", foreign)
++    report = run_probe(lambda: backend, PREFIX, RUN)
++    assert report["status"] == "unresolved" and len(report["cleanup_pending"]) == 1
++    assert len(backend.records) == 1
++
++
++def test_conditional_cleanup_failure_never_reports_pass(backend, monkeypatch):
++    def fail(*args, **kwargs):
++        raise Forbidden("private failure")
++
++    monkeypatch.setattr(Blob, "delete", fail)
++    report = run_probe(lambda: backend, PREFIX, RUN)
++    assert report["status"] == "unresolved" and len(report["cleanup_pending"]) == 2
++    assert len(backend.records) == 2
++
++
++def test_cli_records_private_intent_before_discovering_clients(tmp_path, monkeypatch):
++    import fulcra_mcp.unblock_probe as module
++
++    path = tmp_path / "report.json"
++
++    def factory(bucket):
++        state = json.loads(path.read_text())
++        assert state["status"] == "prepared" and state["bucket"] == "authorized-test"
++        assert path.stat().st_mode & 0o777 == 0o600
++        raise OSError("not authorized here")
++
++    monkeypatch.setattr(module, "bucket_factory", factory)
++    assert (
++        main(["--bucket", "authorized-test", "--prefix", PREFIX, "--report", str(path)])
++        != 0
++    )
++    assert json.loads(path.read_text())["status"] != "passed"
++    with pytest.raises(FileExistsError):
++        main(["--bucket", "authorized-test", "--prefix", PREFIX, "--report", str(path)])
++
++
++def test_explicit_cleanup_resumes_retained_objects_without_new_probe(
++    backend, tmp_path, monkeypatch
++):
++    import fulcra_mcp.unblock_probe as module
++    from fulcra_mcp.unblock_ops_report import write_report
++
++    original = Blob.delete
++    monkeypatch.setattr(
++        Blob, "delete", lambda *a, **kw: (_ for _ in ()).throw(OSError("lost"))
++    )
++    report = run_probe(lambda: backend, PREFIX, RUN)
++    report["bucket"] = "authorized-test"
++    path = tmp_path / "report.json"
++    write_report(path, report, create=True)
++    monkeypatch.setattr(Blob, "delete", original)
++    monkeypatch.setattr(module, "bucket_factory", lambda name: lambda: backend)
++    assert (
++        main(
++            [
++                "--bucket",
++                "authorized-test",
++                "--prefix",
++                PREFIX,
++                "--report",
++                str(path),
++                "--cleanup-only",
++            ]
++        )
++        == 0
++    )
++    observed = json.loads(path.read_text())
++    assert (
++        observed["status"] == "cleanup_complete"
++        and observed["prior_status"] == "unresolved"
++    )
++    assert not backend.records
++
++
++def test_cleanup_rejects_changed_target_and_public_or_symlink_report(
++    tmp_path, monkeypatch
++):
++    import fulcra_mcp.unblock_probe as module
++    from fulcra_mcp.unblock_ops_report import write_report
++
++    path = tmp_path / "report.json"
++    write_report(
++        path,
++        {"bucket": "original-bucket", "prefix": PREFIX, "run_id": RUN},
++        create=True,
++    )
++    monkeypatch.setattr(
++        module,
++        "bucket_factory",
++        lambda name: pytest.fail("invalid cleanup discovered credentials"),
++    )
++    with pytest.raises(ValueError):
++        main(
++            [
++                "--bucket",
++                "another-bucket",
++                "--prefix",
++                PREFIX,
++                "--report",
++                str(path),
++                "--cleanup-only",
++            ]
++        )
++    path.chmod(0o644)
++    with pytest.raises(ValueError):
++        main(
++            [
++                "--bucket",
++                "original-bucket",
++                "--prefix",
++                PREFIX,
++                "--report",
++                str(path),
++                "--cleanup-only",
++            ]
++        )
++    link = tmp_path / "link.json"
++    link.symlink_to(path)
++    with pytest.raises(OSError):
++        main(
++            [
++                "--bucket",
++                "original-bucket",
++                "--prefix",
++                PREFIX,
++                "--report",
++                str(link),
++                "--cleanup-only",
++            ]
++        )
++
++
++def test_lost_successful_delete_response_is_settled_by_exact_absence(
++    backend, monkeypatch
++):
++    original = Blob.delete
++
++    def lost(blob, **kwargs):
++        original(blob, **kwargs)
++        raise OSError("response lost after delete")
++
++    monkeypatch.setattr(Blob, "delete", lost)
++    report = run_probe(lambda: backend, PREFIX, RUN)
++    assert report["status"] == "passed" and not report["cleanup_pending"]
++    assert not backend.records
++
++
++def test_cleanup_generation_race_preserves_the_changed_object(backend, monkeypatch):
++    original = Blob.delete
++    armed = [True]
++
++    def changed(blob, **kwargs):
++        if armed[0]:
++            armed[0] = False
++            with backend.lock:
++                backend.records[blob.name] = (
++                    b'{"probe_run_id":"another-run"}',
++                    backend.next_generation,
++                )
++                backend.next_generation += 1
++        return original(blob, **kwargs)
++
++    monkeypatch.setattr(Blob, "delete", changed)
++    report = run_probe(lambda: backend, PREFIX, RUN)
++    assert report["status"] == "unresolved" and len(report["cleanup_pending"]) == 1
++    assert len(backend.records) == 1
++
++
++@pytest.mark.parametrize("corrupt_kind", ["claim", "cas"])
++def test_corrupt_agreeing_readers_do_not_pass_exact_acceptance(
++    backend, monkeypatch, corrupt_kind
++):
++    original = Blob.upload_from_string
++
++    def corrupt(blob, data, **kwargs):
++        row = json.loads(data)
++        if corrupt_kind == "claim" and row.get("status") == "claimed":
++            row["claim_id"] = "not-a-submitted-claim"
++            row["history"] = [{"status": "bad"}, {"status": "bad"}]
++        if corrupt_kind == "cas" and row.get("winner") in ["0", "1"]:
++            row["winner"] = "not-a-submitted-winner"
++        original(blob, json.dumps(row), **kwargs)
++
++    monkeypatch.setattr(Blob, "upload_from_string", corrupt)
++    report = run_probe(lambda: backend, PREFIX, RUN)
++    assert report["status"] == "failed"
++    assert report["cleanup_pending"] == []
++
++
++def test_repeated_cleanup_retains_original_probe_failure(
++    backend, tmp_path, monkeypatch
++):
++    import fulcra_mcp.unblock_probe as module
++    from fulcra_mcp.unblock_ops_report import write_report
++
++    path = tmp_path / "probe.json"
++    report = {
++        "status": "failed",
++        "bucket": "authorized-test",
++        "prefix": PREFIX,
++        "run_id": RUN,
++        "objects": [
++            module.scope(PREFIX, RUN) + "unblock/v1/" + key for key in module.keys(RUN)
++        ],
++    }
++    write_report(path, report, create=True)
++    monkeypatch.setattr(module, "bucket_factory", lambda name: lambda: backend)
++    args = [
++        "--bucket",
++        "authorized-test",
++        "--prefix",
++        PREFIX,
++        "--report",
++        str(path),
++        "--cleanup-only",
++    ]
++    assert main(args) == 0
++    assert main(args) == 0
++    assert json.loads(path.read_text())["prior_status"] == "failed"
 diff --git a/tests/test_unblock_provider.py b/tests/test_unblock_provider.py
 new file mode 100644
 index 0000000..b7e5639
