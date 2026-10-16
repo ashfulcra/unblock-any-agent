@@ -1,6 +1,10 @@
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 import { canonicalRecord, projectEvents, readEvents, stableId, sealAgent, openAgent, authorizeAgent, enrollmentRecord, grantScope } from './unblock-core.js';
 
+export class NativeSourceError extends Error {
+  constructor() {super('Fulcra source unavailable');this.name='NativeSourceError';}
+}
+
 /** @param {any} config */
 export function createService(config) {
   const endpoint = config.apiEndpoint || 'https://api.fulcradynamics.com/';
@@ -10,9 +14,11 @@ export function createService(config) {
   if (!/^MomentAnnotation\/[a-f0-9-]{36}$/.test(annotation || '') || !/^[a-f0-9]{64}$/.test(config.key || '') || !config.ownerId) throw new Error('Native pilot is not configured');
   /** @param {string} token @param {string} path @param {any} [options] */
   async function upstream(token,path,options={}) {
-    const response = await fetcher(endpoint+path,{...options,headers:{Authorization:'Bearer '+token,...options.headers},signal:AbortSignal.timeout(12000)});
-    if (!response.ok) throw new Error('Fulcra request unavailable ('+response.status+')');
-    return response.json();
+    try {
+      const response = await fetcher(endpoint+path,{...options,headers:{Authorization:'Bearer '+token,...options.headers},signal:AbortSignal.timeout(12000)});
+      if (!response.ok) throw new NativeSourceError();
+      return await response.json();
+    } catch {throw new NativeSourceError();}
   }
   /** @param {string} note */
   const mac = note => createHmac('sha256',config.key).update('unblock-record/1:'+note).digest('hex');
