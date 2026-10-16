@@ -1,12 +1,12 @@
 # Unblock First Release Specification
 
-Status: revision required after independent Fable review, 2026-10-16. This specification selects a proposed first release from the broader [design](2026-10-16-unblock-any-agent-design.md), [requirements](../../requirements.md), [platform assessment](../../current-platform-assessment.md), and [marketplace plan](../../marketplace-release-plan.md). It is not yet approved for implementation.
+Status: revised for autonomous local implementation, 2026-10-16. This specification selects a proposed first release from the broader [design](2026-10-16-unblock-any-agent-design.md), [requirements](../../requirements.md), [platform assessment](../../current-platform-assessment.md), and [marketplace plan](../../marketplace-release-plan.md). Ash subsequently directed the maintainer to take safe next steps and keep working without repeated prompts. This authorizes reversible local work within the recorded scope; production hosting, credentials and public release remain separate outcomes.
 
 ## Independent review follow-up
 
 The [Tycho-delegated Fable review](../../reviews/2026-10-16-fable-spec-review.md) of commit `102e3ce` recommends **revise first**. Its findings are retained as review claims pending validation. Before implementation planning, resolve the monitor runtime and credential custody (F1), MCP authorization-server path (F2), agent identity binding (F3), and future multi-human response write path (F4). Validate the remaining platform and release findings against current sources. Reviewer naming and scope recommendations remain proposals; they do not override the user’s requirements.
 
-The [review-resolution brief](../../review-resolution.md) now proposes concrete architecture decisions and the first build sequence. Those recommendations require review before replacing the provisional architecture below.
+The [review-resolution brief](../../review-resolution.md) now proposes concrete architecture decisions and the first build sequence. The architecture below adopts the selected local-first recommendations provisionally under Ash’s instruction to keep working; live integration checks remain explicit.
 
 ## Release outcome
 
@@ -18,11 +18,17 @@ There are no inherited Coord architecture constraints. The maintainer's V5 enrol
 
 ## Architecture decision
 
-Use a thin product application with web and remote MCP interfaces over Fulcra's current structured-data, context/file, identity, and selected-sharing capabilities. Keep portable skills as the workflow layer; platform adapters add native UI, lifecycle capture, and delivery where supported. Begin from the current Fulcra web-app template and deployment path.
+Use one shared application service that enforces identity and workspace access for web, skills and both platform exports. Forked dashboards connect to that service using their owners’ accounts. Separate backend deployment remains an advanced option. This is a provisional routine design choice under Ash’s autonomous-continuation instruction; the unanswered optional topology question is not a blocker or an approved preference.
 
-The shared application implements the same operations for every surface. Authenticate callers and resolve their account/team permissions before reading or changing private work. Persist requests, human responses, useful continuity context, and progress outside runtime sessions. Use current platform schemas and direct queries; no custom bus, replay engine, local database, or four-part actor binding is required.
+The service owns operational requests, response revisions, agent grants and subscription/delivery state. Use a transactional relational store for unique logical need keys, concurrent responses and revocation. Fulcra remains the connected account/context/artifact platform. Start with a single-process persistent SQLite adapter for the local proof; this is a new fit-for-purpose choice, not a dependency on Coord. A serverless public deployment must use an appropriate persistent store instead of ephemeral local files. The web dashboard remains forkable and deployable using the Fulcra template; the local proof is a deliberately small response view.
 
-Before building the full interface, demonstrate two integration contracts: browser and MCP credentials resolve to the intended human/account, and the chosen persistence behavior retains concurrent responses without silently overwriting them. If additional transactional infrastructure is needed, document the specific failed contract and the minimal addition. Native wake and monitoring have separate capability checks. These checks are deliverables, not assumptions of existing support.
+**Authorization:** the public MCP resource requires its own explicit OAuth gateway, with Fulcra as upstream sign-in/account connection and maintained MCP authorization libraries. Evaluate the current Fulcra MCP broker implementation, including discovery, PKCE, client registration, resource binding, durable grants, rotation and revocation. Never expose upstream tokens to plugin clients or assume they authorize the Unblock resource. Production provider/client registration and callback credentials must be supplied and tested before claiming marketplace connectivity. The local proof uses a clearly local-only owner bootstrap credential and separately issued scoped agent/listener credentials; these are not a substitute for marketplace OAuth.
+
+**Agents:** enroll stable product agents under an authenticated owner and issue separate revocable credentials. Derive identity from the credential, not a caller-supplied name. Register replaceable runtime destinations independently. A listener gets explicit check/route authority for agents in its environment and may not take their assignments.
+
+**Multiple humans:** store responses in the application service under independently authenticated human identity and workspace membership. Future additional humans do not need write permission to another person’s Fulcra account. Keep artifact permissions separate. The first local proof supports owner-created workspaces and isolation; real second-human OAuth admission/revocation remains an integration acceptance test.
+
+Before the full interface, prove local account/agent isolation, retry and concurrent/stale response handling, listener dispatch and recovery. Then prove actual OAuth client linking, Claude pickup and the selected ChatGPT route. Keep documented candidates separate from observed behavior. No custom bus, replay engine or legacy actor tuple is required.
 
 ## Minimal shared information
 
@@ -34,7 +40,7 @@ Before building the full interface, demonstrate two integration contracts: brows
 | Response | Stable identifier, request identity and the request/context version shown to the responder, actual authenticated responder, answer or artifact/action result, and time. |
 | Continuation result | Which response was used, what the agent did next, useful evidence, and any remaining obstacle. |
 
-These are product information contracts, not a prescribed table or event layout. Choose concrete types and indexes from current platform capabilities. Keep versioned artifact references where the exact content matters. Never rely on a sender label supplied by the model as authentication.
+These are product information contracts, not a prescribed table or event layout. Choose concrete types and indexes from current platform capabilities. Keep versioned artifact references where the exact content matters. Request/context revisions are server-assigned and immutable; a response names the revision it answered. Reserve a unique logical need key per agent/work/blocker revision so another session discovers the same request after a retry. Never rely on a sender label supplied by the model as authentication.
 
 ## Common operations
 
@@ -47,7 +53,7 @@ These are product information contracts, not a prescribed table or event layout.
 | `resume_work` | Retrieve relevant context and responses for an authorized agent. Reconcile them with current artifacts, permissions, and action results before recommending the next step. |
 | `report_progress` | Record the observed next action, completion, or remaining obstacle. Update the human view using what actually happened. |
 
-The application does not execute arbitrary commands through these operations. Consequential actions use the agent's separately authorized host tools. Repeated delivery or repeated resume must not repeat an external action without checking its result.
+The application does not execute arbitrary commands through these operations. Consequential actions use the agent's separately authorized host tools. Before a consequential action, retain its intended effect and stable action identity. Use the target’s idempotency key where supported. Repeated delivery or repeated resume must not repeat an external action without checking its result; unqueryable and non-idempotent uncertain actions require reconciliation.
 
 For a changed or obsolete request, retain the historical answer and show that the current need remains unresolved. Do not silently choose the latest incompatible answer. For the first single-human flow, the responsible agent reconciles the answer with the work context and records what it used. The later multi-human model can extend resolver policy without changing response attribution.
 
@@ -81,7 +87,7 @@ The [work-pickup design](2026-10-16-agent-work-pickup.md) records the incident, 
 
 ## Distribution and personal dashboards
 
-Build self-contained Claude and OpenAI exports from one shared source. The OpenAI public package includes the intended remote MCP capability from its first submission and excludes lifecycle hooks. Keep Claude-specific mod capabilities in the Claude export. Validate each package in the actual supported hosts, including the workflow available where native mod UI does not render.
+Build self-contained Claude and OpenAI exports from one shared source. The OpenAI public package includes the intended remote MCP capability from its first submission and excludes lifecycle hooks. Include the same remote MCP service in the Claude export and its separate connector submission; keep Claude-specific mod capabilities in that export. Validate each package in the actual supported hosts, including the workflow available where native mod UI does not render.
 
 Official public distribution is an early release objective. Audit publisher access, name validation, production endpoint/domain verification, supported package fields, public listing material, and reviewer access while building the useful flow. Track Anthropic directory acceptance and `claude-plugins-official` placement separately. Neither a GitHub repository nor a local command registration reserves a marketplace name.
 
