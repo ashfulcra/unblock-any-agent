@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {createMcpHandler,McpServer} from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
+import {NativeSourceError} from './unblock-api.js';
 
 /** @param {any} value @returns {any} */
 function sorted(value) {
@@ -18,7 +19,7 @@ function intent(label,payload) {
 function failure(error) {
  const e=/** @type {Error & {publication_uncertain?:boolean}} */(error);
  if(e?.publication_uncertain)return 'native_write_uncertain_retain_same_intent_and_check_readback';
- if(/unavailable|unverified|integrity|Unexpected native/i.test(e?.message || ''))return 'source_unavailable_work_remains_pending';
+ if(e instanceof NativeSourceError || /unavailable|unverified|integrity|Unexpected native/i.test(e?.message || ''))return 'source_unavailable_work_remains_pending';
  return 'native_operation_rejected_check_current_work_and_retain_prior_uncertainty';
 }
 /** @param {any} service @param {string} token */
@@ -26,7 +27,7 @@ function workerServer(service,token) {
  const server=new McpServer({name:'unblock',version:'0.4.0'},{capabilities:{tools:{listChanged:false}},instructions:'Recover owned work before acting. Pending receipts require exact readback. Review the current question and complete answer set; reconcile uncertain actions before effects. This transport supplies no owner authentication, command execution, background listener, OAuth flow or event subscription.'});
  const read={readOnlyHint:true,destructiveHint:false,openWorldHint:false};
  const write={readOnlyHint:false,destructiveHint:false,openWorldHint:false};
- const ref=z.uuid(),text=z.string().min(1),key=text.max(160);
+ const ref=z.uuid().transform(value=>value.toLowerCase()),text=z.string().min(1),key=text.max(160);
  const question={need:text.max(4000),context:text.max(16000),recommendation:text.max(4000),next_action:text.max(4000)};
  /** @param {string} op @param {any} [body] */
  async function native(op,body={}) {return service.handle(op,{token,body});}
@@ -91,7 +92,7 @@ export function createNativeMcp({service,origin}) {
    } catch(error) {
     const message=/** @type {Error} */(error).message || '';
     const authentication=/Authentication|credential|Agent enrollment/i.test(message);
-    const source=!authentication && /unavailable|unverified|integrity|not configured|Unexpected native/i.test(message);
+    const source=error instanceof NativeSourceError || (!authentication && /unavailable|unverified|integrity|not configured|Unexpected native/i.test(message));
     return reject(source?'source_unavailable_work_remains_pending':'native_enrollment_expired_or_revoked',source?503:401);
    }
   }

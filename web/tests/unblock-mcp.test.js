@@ -24,6 +24,7 @@ test('modern SDK seven-tool loop retains pending/readback, revision and replacem
  const f=fixture(),a=await enroll(f),h=createNativeMcp({service:f.service,origin}),{client:c,methods}=await connect(t,h,()=>a.credential);
  assert.deepEqual((await c.listTools()).tools.map(x=>x.name).sort(),['ask_for_help','recover_work','get_work','revise_need','record_progress','begin_action','reconcile_action'].sort());assert.ok(methods.includes('server/discover'));assert.equal(c.getServerCapabilities()?.tools?.listChanged,false);
  const r=data(await call(c,'ask_for_help',need));assert.equal(r.visibility,'pending');assert.equal(data(await call(c,'recover_work')).requests.length,0);f.publish();assert.equal(data(await call(c,'get_work',{request_id:r.request_id})).agent_id,'alpha');
+ assert.equal(data(await call(c,'get_work',{request_id:r.request_id.toUpperCase()})).agent_id,'alpha');
  const revised=data(await call(c,'revise_need',{request_id:r.request_id,parent_revisions:[r.record_id],need:'Updated question',context:'Corrected context',recommendation:'Blue',next_action:'Private marker'}));f.publish();await c.close();
  await f.service.handle('answer',{cookieToken:f.token,body:{intent_id:'answer',request_id:r.request_id,revision:revised.record_id,answer:'Only synthetic blue'}});f.publish();
  const {client:replacement}=await connect(t,h,()=>a.credential);const w=data(await call(replacement,'get_work',{request_id:r.request_id}));assert.equal(w.revisions[0].payload.context,'Corrected context');assert.equal(w.answers.length,1);
@@ -59,3 +60,15 @@ test('retry intent matches Python Unicode oracle; schemas reject sender/referenc
 test('post-ingestion failure preserves pending/uncertain retry guidance',async t=>{
  const f=fixture(),a=await enroll(f),h=createNativeMcp({service:f.service,origin}),{client}=await connect(t,h,()=>a.credential);f.failAfterWrite();const r=await call(client,'ask_for_help',need);assert.equal(r.isError,true);assert.match(JSON.stringify(r.content),/uncertain|pending|same intent/i);
 });
+
+for(const kind of ['network','timeout','json']){
+ test(`upstream ${kind} failure during preflight preserves pending work without invalid-token challenge`,async t=>{
+  const f=fixture(),a=await enroll(f),h=createNativeMcp({service:f.service,origin});t.after(()=>h.close());f.sourceFault(kind);
+  const r=await h.fetch(new Request(origin+'/mcp',{method:'POST',headers:{authorization:'Bearer '+a.credential,'content-type':'application/json'},body:'{}'}));
+  assert.equal(r.status,503);assert.equal(r.headers.get('www-authenticate'),null);assert.deepEqual(await r.json(),{error:'source_unavailable_work_remains_pending'});
+ });
+ test(`upstream ${kind} failure after successful preflight preserves pending tool guidance`,async t=>{
+  const f=fixture(),a=await enroll(f),h=createNativeMcp({service:f.service,origin}),{client}=await connect(t,h,()=>a.credential);
+  f.sourceFault(kind,2);const r=await call(client,'recover_work');assert.equal(r.isError,true);assert.match(JSON.stringify(r.content),/source_unavailable_work_remains_pending/);
+ });
+}
