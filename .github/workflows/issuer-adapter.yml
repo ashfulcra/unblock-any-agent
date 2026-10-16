@@ -17,7 +17,7 @@ jobs:
       matrix:
         python: ['3.13', '3.14']
     env:
-      UNBLOCK_ISSUER_DIR: ${{ runner.temp }}/unblock-issuer-candidate
+      UNBLOCK_ISSUER_DIR: ${{ github.workspace }}/.state/issuer-candidate
       UNBLOCK_ENABLED: 'false'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
