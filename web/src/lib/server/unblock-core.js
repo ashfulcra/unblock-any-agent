@@ -78,9 +78,14 @@ export function openAgent(token,key) {
   cipher.setAAD(Buffer.from('unblock-agent/1')); cipher.setAuthTag(data.subarray(12,28));
   return JSON.parse(Buffer.concat([cipher.update(data.subarray(28)),cipher.final()]).toString('utf8'));
 }
+/** Check authenticated sealed claims before any upstream request.
+ * @param {any} grant @param {string} account @param {number} now */
+export function validateAgentCredential(grant,account,now) {
+  if (!grant.agent_id || grant.owner_id !== account || !Number.isFinite(grant.expires_at) || grant.expires_at <= now) throw new Error('Agent credential expired or account mismatch');
+}
 /** @param {any} grant @param {any[]} events @param {string} account @param {number} now */
 export function authorizeAgent(grant,events,account,now) {
-  if (!grant.agent_id || grant.owner_id !== account || !Number.isFinite(grant.expires_at) || grant.expires_at <= now) throw new Error('Agent credential expired or account mismatch');
+  validateAgentCredential(grant,account,now);
   const enrollment=enrollmentRecord(grant.grant_id,events);
   if (grantScope(grant.agent_id,grant)!==grantScope(enrollment.agent_id,enrollment.payload)) throw new Error('Agent enrollment scope mismatch');
   return grant;

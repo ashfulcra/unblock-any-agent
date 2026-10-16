@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {Client,StreamableHTTPClientTransport} from '@modelcontextprotocol/client';
 import {createNativeMcp} from '../src/lib/server/unblock-mcp.js';
 import {fixture} from './helpers/native-fixture.js';
+import {createService} from '../src/lib/server/unblock-api.js';
+import {sealAgent} from '../src/lib/server/unblock-core.js';
 const origin='https://pilot.invalid';
 /** @param {ReturnType<typeof fixture>} f */
 async function enroll(f,id='alpha',kind='agent') {
@@ -91,3 +93,27 @@ for(const modern of [true,false])test(`declared update roundtrip uses checked na
  const row=work.expectations[0];data(await call(client,'record_work_update',{...args,parent_revisions:[saved.record_id],status:'completed',next_update_at:null,evidence:'Report checked and returned'}));f.publish();
  work=data(await call(client,'recover_work'));assert.equal(work.expectations[0].state,'completed');assert.equal(work.expectations[0].history.length,2);assert.equal(row.agent_id,'alpha');
 });
+
+
+for(const fault of ['unauthorized','network','timeout','invalid-json']) {
+ for(const validity of ['expired','foreign-owner','unexpired']) {
+  test(`known sealed validity precedes ${fault} source failure (${validity})`,async()=>{
+   const key='a'.repeat(64),clock=1000;
+   let sourceCalls=0;
+   const credential=sealAgent({agent_id:'alpha',owner_id:validity==='foreign-owner'?'another-account':'owner-account',expires_at:validity==='expired'?clock:clock+100,upstream:'synthetic-upstream',grant_id:'synthetic-grant'},key);
+   const service=createService({ownerId:'owner-account',annotation:'MomentAnnotation/11111111-1111-4111-a111-111111111111',key,now:()=>clock,fetch:async()=>{
+    sourceCalls++;
+    if(fault==='network')throw new TypeError('synthetic network failure');
+    if(fault==='timeout')throw new DOMException('synthetic timeout','TimeoutError');
+    return new Response(fault==='unauthorized'?'denied':'invalid JSON',{status:fault==='unauthorized'?401:200});
+   }});
+   const h=createNativeMcp({service,origin});
+   try {
+    const response=await h.fetch(new Request(origin+'/mcp',{method:'POST',headers:{authorization:'Bearer '+credential,'content-type':'application/json'},body:'{}'}));
+    assert.equal(response.status,validity==='unexpired'?503:401);
+    assert.equal(sourceCalls,validity==='unexpired'?1:0);
+    assert.equal((await response.json()).error,validity==='unexpired'?'source_unavailable_work_remains_pending':'native_enrollment_expired_or_revoked');
+   } finally {await h.close();}
+  });
+ }
+}
