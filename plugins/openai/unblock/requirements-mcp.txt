@@ -1,0 +1,2 @@
+# Local stdio integration; core loopback proof remains standard-library only.
+mcp==2.3.0

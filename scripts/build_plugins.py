@@ -58,6 +58,9 @@ Read `skills/unblock/references/setup.md` for setup, CLI fallback and listener r
 
 This package does not install a persistent listener, connect ChatGPT web, implement remote OAuth or prove marketplace eligibility. The stdio MCP bridge ends with its host session; configure a separate environment listener or supported scheduled check for later answers. Public submission requires the remaining remote-host authentication, installation, listing and license decisions documented in the canonical repository. No project license has been selected for public distribution.
 ''')
+        if platform=='claude':
+            with (root/'README.md').open('a') as readme:
+                readme.write('\nInstall this source candidate in Claude Code 2.1.275 or later with `/plugin install unblock --marketplace ashfulcra/unblock-any-agent`. This GitHub source catalog is separate from an official directory listing and reserves no global namespace.\n')
     return exports
 
 

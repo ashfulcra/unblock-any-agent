@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "unblock-any-agent",
+  "owner": {
+    "name": "ashfulcra"
+  },
+  "plugins": [
+    {
+      "name": "unblock",
+      "source": "./plugins/claude/unblock",
+      "description": "Request help, recover continuity and verify that an agent continued.",
+      "version": "0.4.0"
+    }
+  ],
+  "description": "Canonical Unblock Any Agent development source: human help, continuity and verified agent continuation."
+}
