@@ -65,5 +65,7 @@ Interfaces: Listener(Client,environment,routes,state_path).tick(); private local
 
 - [x] Run the entire suite, CLI smoke and source secret/private-state checks.
 - [x] Obtain a fresh review of the local slice, fix consequential findings with regression tests, and retain the raw result.
-- [ ] Keep production OAuth/provider setup, remote MCP/Events, actual-host package installation, Fulcra connection and hosting as explicit remaining tasks with their exact prerequisites.
-- [ ] Update the implementation ledger and own V5 fold; continue safe unblocked work rather than declaring the complete product shipped.
+- [x] Keep production OAuth/provider setup, remote MCP/Events, actual-host package installation, Fulcra connection and hosting as explicit remaining tasks with their exact prerequisites.
+- [x] Update the implementation ledger and own V5 fold; continue safe unblocked work rather than declaring the complete product shipped.
+
+Bounded local slice completed. Production and host acceptance remains tracked in [live integration prerequisites](../../live-integration.md).

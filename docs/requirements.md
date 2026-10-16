@@ -1,6 +1,6 @@
 # Unblock Any Agent Requirements
 
-Recorded 2026-10-16. This is the requirements record for the planned `ashfulcra/unblock-any-agent` repository. A local implementation now exists; [execution evidence](execution-ledger.md) distinguishes verified behavior from planned production functionality. Proposed behavior belongs in the [draft design](superpowers/specs/2026-10-16-unblock-any-agent-design.md); it is not an additional user decision.
+Recorded 2026-10-16. This is the requirements record for the canonical `ashfulcra/unblock-any-agent` repository. A local implementation now exists; [execution evidence](execution-ledger.md) distinguishes verified behavior from planned production functionality. Proposed behavior belongs in the [draft design](superpowers/specs/2026-10-16-unblock-any-agent-design.md); it is not an additional user decision.
 
 ## Purpose and references
 

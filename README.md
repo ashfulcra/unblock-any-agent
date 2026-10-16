@@ -17,4 +17,4 @@ A working local proof now includes an authenticated request/answer service, a mi
 - [Marketplace release plan](docs/marketplace-release-plan.md): package, naming, invocation, and submission rules.
 - [Broader design](docs/superpowers/specs/2026-10-16-unblock-any-agent-design.md): product direction and future scope.
 
-The intended canonical source is `ashfulcra/unblock-any-agent`. Proposed plugin identity: `unblock`; proposed display name: Unblock Any Agent. Marketplace names and the short command remain subject to validation. No namespace is reserved.
+The canonical source is `ashfulcra/unblock-any-agent`. Proposed plugin identity: `unblock`; proposed display name: Unblock Any Agent. Marketplace names and the short command remain subject to validation. No namespace is reserved.

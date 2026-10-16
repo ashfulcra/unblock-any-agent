@@ -8,6 +8,8 @@ Architecture: reuse the authenticated loopback application service. A stdio MCP 
 2. [x] Run a missing-skill baseline, write the concise reference skill, validate metadata and exercise a fresh-context recovery/setup scenario. Keep scripts/references self-contained.
 3. [x] Write export tests for self-contained packages, contained regular files, synchronized identity/version and usable copied runtime. Implement explicit allowlist copying; export outside source with no credentials or local paths. Run Claude strict native validation and a portable schema check.
 4. [x] Verify the packaged MCP process with a real client. Do not claim a host install until that host has loaded it; no account upload or global plugin configuration is needed for source development.
-5. [ ] Record evidence and exact remaining integration prerequisites; publish/read back own V5 progress; run the identity-specific exit check and continue safe work.
+5. [x] Record evidence and exact remaining integration prerequisites; publish/read back own V5 progress; run the identity-specific exit check and continue safe work.
 
 Provisional choices: package ID `unblock`, display Unblock Any Agent, local development version 0.1.0. No namespace is reserved. No project license has been selected. Do not invent a production endpoint or treat a local package as the public release.
+
+Bounded local slice completed. Production and host acceptance remains tracked in [live integration prerequisites](../../live-integration.md).

@@ -6,7 +6,7 @@ Planning baseline: 2026-10-16. Goal: publish useful Claude and ChatGPT plugins t
 
 | Surface | Proposed identity | Status |
 | --- | --- | --- |
-| Canonical source and skill repository | `ashfulcra/unblock-any-agent` | User-selected repository destination; local planning files exist. |
+| Canonical source and skill repository | `ashfulcra/unblock-any-agent` | Public canonical repository created; source and skill readback verified. |
 | Stable plugin identifier | `unblock` | Preferred candidate, subject to actual validation and availability. |
 | Public display name | Unblock Any Agent | Proposed descriptive brand; distinguish from the package identifier. |
 | Primary skill | `unblock` | Proposed shared workflow name. |
