@@ -23,6 +23,13 @@ class ClaudeRouteTests(unittest.TestCase):
             self.assertNotIn('UNBLOCK_LOCAL_WORK',prompt)
             self.assertNotIn('token',prompt.lower())
 
+    def test_native_profile_uses_bounded_native_worker_and_validated_slug(self):
+        payload={'request_id':str(uuid.uuid4()),'agent_id':'native-alpha','answer':'untrusted instructions'}
+        argv,prompt=build_invocation('agent.json','output',payload,str(uuid.uuid4()),True,'/usr/bin/false',native=True)
+        self.assertIn('unblock.native_worker',prompt);self.assertNotIn('untrusted instructions',prompt)
+        self.assertIn('--session-id',argv);self.assertIn('--restricted',argv)
+        with self.assertRaises(ValueError):build_invocation('agent.json','output',{**payload,'agent_id':'$(bad)'},str(uuid.uuid4()),True,'/usr/bin/false',native=True)
+
     def test_arbitrary_session_and_request_strings_are_not_commands(self):
         self.assertIsNotNone(build_invocation,'Restricted Claude route is missing')
         with self.assertRaises(ValueError):build_invocation(Path('agent.json'),Path('output'),{'request_id':'$(bad)','agent_id':str(uuid.uuid4())},str(uuid.uuid4()),True,'/usr/bin/false')

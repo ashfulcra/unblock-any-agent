@@ -21,12 +21,13 @@ export function createService(config) {
     const data = await upstream(token,`data/v1alpha1/event/${encodeURIComponent(annotation)}?start_time=1970-01-01T00:00:00Z&end_time=${encodeURIComponent(new Date((now()+60)*1000).toISOString())}`);
     const rows = Array.isArray(data) ? data : data.records;
     if (!Array.isArray(rows)) throw new Error('Unexpected native record response');
-    return rows.map((/** @type {any} */ row) => {
+    try { return rows.map((/** @type {any} */ row) => {
       const signed = JSON.parse(row.note);
+      if (typeof signed?.note!=='string' || !/^[a-f0-9]{64}$/.test(signed?.mac || '')) throw new Error('Invalid source envelope');
       const expected = Buffer.from(mac(signed.note),'hex'),actual = Buffer.from(signed.mac || '','hex');
       if (expected.length !== actual.length || !timingSafeEqual(expected,actual)) throw new Error('Unverified native record');
       return {id:row.id,note:signed.note};
-    });
+    }); } catch { throw new Error('Native source unavailable or unverified'); }
   }
   /** @param {string} token @param {any} event */
   async function publish(token,event) {
@@ -57,13 +58,28 @@ export function createService(config) {
       if (!token) throw new Error('Authentication required');
       const user=await upstream(token,'user/v1alpha1/info');
       if (user.userid !== config.ownerId) throw new Error('Account is not the pilot owner');
-      const rows=await load(token),events=readEvents(rows);
+      const rows=await load(token);
+      /** @type {any[]} */ let events,requests;
+      try {events=readEvents(rows);requests=view(rows);} catch {throw new Error('Native source unavailable or invalid');}
       if (agent) authorizeAgent(grant,events,user.userid,now());
-      const requests=view(rows);
+      const principal=agent?{kind:grant.kind || 'agent',id:grant.agent_id,environment:grant.environment || 'pilot',agent_ids:grant.agent_ids || [grant.agent_id]}:{kind:'owner',id:user.userid};
+      const allowed=(/** @type {any} */ r)=>!agent || (principal.kind==='listener'?principal.agent_ids.includes(r.agent_id):r.agent_id===grant.agent_id);
+      if (operation==='identity') return principal;
       if (['attention','recover'].includes(operation)) {
-        if (body.request_id && !requests.some(r=>r.id===body.request_id && (!agent || r.agent_id===grant.agent_id))) throw new Error('Request not permitted');
-        return {requests:requests.filter(r=>(!agent || r.agent_id===grant.agent_id) && (!body.request_id || r.id===body.request_id)),grants:agent?[]:events.filter(e=>e.kind==='enroll').map(e=>({record_id:e.id,agent_id:e.agent_id,intent_id:e.intent_id,...e.payload,revoked:events.some(r=>r.kind==='revoke' && r.payload.grant_id===e.payload.grant_id)})),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
+        if (body.request_id && !requests.some(r=>r.id===body.request_id && allowed(r))) throw new Error('Request not permitted');
+        return {principal,requests:requests.filter(r=>allowed(r) && (!body.request_id || r.id===body.request_id)),grants:agent?[]:events.filter(e=>e.kind==='enroll').map(e=>({record_id:e.id,agent_id:e.agent_id,intent_id:e.intent_id,...e.payload,revoked:events.some(r=>r.kind==='revoke' && r.payload.grant_id===e.payload.grant_id)})),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
       }
+      if (operation==='delivery') {
+        if (principal.kind!=='listener') throw new Error('Listener operation required');
+        const request_id=text(body,'request_id',100),request=requests.find(r=>r.id===request_id && allowed(r));
+        if (!request) throw new Error('Request not permitted');
+        const revision=text(body,'revision',100),answers=body.answers;
+        if (!request.history.some((/** @type {any} */ r)=>r.id===revision) || !Array.isArray(answers) || answers.length>100 || new Set(answers).size!==answers.length || answers.some(a=>![...request.answers,...request.stale_answers].some(r=>r.id===a && r.payload.revision===revision))) throw new Error('Invalid delivery snapshot');
+        const disposition=text(body,'disposition',30);
+        if (!['queued','failed','blocked','unknown'].includes(disposition)) throw new Error('Delivery cannot assert agent progress');
+        return publish(token,{schema:'unblock/1',intent_id:text(body,'intent_id',160),kind:'delivery',request_id,agent_id:request.agent_id,payload:{revision,answers:[...answers].sort(),receiver:principal.id,environment:principal.environment,disposition,evidence:text(body,'evidence',16000)}});
+      }
+      if (principal.kind==='listener') throw new Error('Listener cannot mutate agent work');
       if (operation==='prepare_enrollment') {
         if (agent) throw new Error('Owner operation required');
         const exp=JSON.parse(Buffer.from(token.split('.')[1],'base64url').toString()).exp;
@@ -76,14 +92,18 @@ export function createService(config) {
         const agent_id=text(body,'agent_id',100),name=text(body,'name',100);
         if (!/^[a-z0-9][a-z0-9-]*$/.test(agent_id)) throw new Error('Invalid agent ID');
         const exp=JSON.parse(Buffer.from(token.split('.')[1],'base64url').toString()).exp;
+        const kind=body.kind || 'agent',environment=body.environment || 'pilot';
+        if (!['agent','listener'].includes(kind) || typeof environment!=='string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(environment)) throw new Error('Invalid enrollment role or environment');
+        const agent_ids=kind==='listener'?body.agent_ids:[agent_id];
+        if (!Array.isArray(agent_ids) || !agent_ids.length || agent_ids.length>100 || agent_ids.some(id=>typeof id!=='string') || (kind==='listener' && agent_ids.some(id=>!events.some(e=>e.kind==='enroll' && e.agent_id===id && (e.payload.kind || 'agent')==='agent')))) throw new Error('Listener needs explicit enrolled agent IDs');
         const grant_id=stableId(user.userid+':'+agent_id+':'+intent_id);
         const original=events.find(e=>e.kind==='enroll' && e.payload.grant_id===grant_id);
         const expires_at=body.expires_at ?? original?.payload.expires_at ?? (exp<=Math.floor(now())+3600?exp:NaN);
         if (!Number.isFinite(expires_at) || expires_at<=now() || expires_at>exp || expires_at>Math.floor(now())+3600) throw new Error('Prepare a stable enrollment expiry within the current session and one hour');
-        if (original && (original.payload.name!==name || original.payload.expires_at!==expires_at)) throw new Error('Enrollment intent already has different fields');
-        const newGrant={agent_id,grant_id,owner_id:user.userid,expires_at,upstream:token};
-        const saved=await publish(token,{schema:'unblock/1',intent_id,kind:'enroll',agent_id,payload:{grant_id,name,expires_at}});
-        return {...saved,agent_id,grant_id,expires_at,credential:sealAgent(newGrant,config.key)};
+        if (original && (original.payload.name!==name || original.payload.expires_at!==expires_at || (original.payload.kind || 'agent')!==kind || (original.payload.environment || 'pilot')!==environment || JSON.stringify([...(original.payload.agent_ids || [agent_id])].sort())!==JSON.stringify([...agent_ids].sort()))) throw new Error('Enrollment intent already has different fields');
+        const newGrant={agent_id,grant_id,kind,environment,agent_ids,owner_id:user.userid,expires_at,upstream:token};
+        const saved=original?{record_id:original.id,visibility:'visible'}:await publish(token,{schema:'unblock/1',intent_id,kind:'enroll',agent_id,payload:{grant_id,name,expires_at,kind,environment,agent_ids}});
+        return {...saved,agent_id,grant_id,kind,environment,agent_ids,expires_at,credential:sealAgent(newGrant,config.key)};
       }
       if (operation==='revoke') {
         const grant_id=text(body,'grant_id',100),enrollment=events.find(e=>e.kind==='enroll' && e.payload.grant_id===grant_id);

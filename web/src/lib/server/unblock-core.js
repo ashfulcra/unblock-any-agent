@@ -57,7 +57,9 @@ export function projectEvents(records) {
       state = ['completed','resumed','acknowledged'].find(stage => progress.some((/** @type {any} */ e) => e.payload.stage === stage)) || state;
     }
     if (uncertain_actions.length) state = 'uncertain_action';
-    return { id, agent_id, revisions, history, answers, stale_answers, progress, progress_history:list.filter((/** @type {any} */ e)=>e.kind==='progress'), actions:list.filter((/** @type {any} */ e)=>e.kind==='action'), settlements:list.filter((/** @type {any} */ e)=>e.kind==='settle'), uncertain_actions, state };
+    const delivery_history=list.filter((/** @type {any} */ e)=>e.kind==='delivery');
+    const deliveries=delivery_history.filter((/** @type {any} */ e)=>current && e.payload.revision===current.id && canonical([...e.payload.answers].sort())===canonical(answerIds));
+    return { id, agent_id, revisions, history, answers, stale_answers, progress, progress_history:list.filter((/** @type {any} */ e)=>e.kind==='progress'), delivery_history, deliveries, actions:list.filter((/** @type {any} */ e)=>e.kind==='action'), settlements:list.filter((/** @type {any} */ e)=>e.kind==='settle'), uncertain_actions, state };
   });
 }
 /** @param {any} grant @param {string} key */

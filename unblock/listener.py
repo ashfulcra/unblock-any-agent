@@ -86,6 +86,11 @@ class Listener:
             os.killpg(process.pid,signal.SIGKILL)
             process.communicate()
             return 'failed'
+        finally:
+            # A launcher can exit while children still hold authority. Stop its
+            # remaining process group before releasing the exclusive work claim.
+            try:os.killpg(process.pid,signal.SIGKILL)
+            except ProcessLookupError:pass
 
     def tick(self):
         routes=self._routes()

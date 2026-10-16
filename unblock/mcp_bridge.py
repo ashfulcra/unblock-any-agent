@@ -11,7 +11,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from .client import Client
+from .client import Client, private_read
 from .store import DomainError
 
 
@@ -75,7 +75,13 @@ def main():
     try:
         config=os.environ.get('UNBLOCK_AGENT_CONFIG')
         if not config:raise ValueError('Set UNBLOCK_AGENT_CONFIG to an absolute private agent config path')
-        server=build_server(config)
+        profile=private_read(config)
+        if profile.get('transport')=='fulcra-native':
+            from .native_mcp import build_server as build_native_server
+            server=build_native_server(config)
+        elif profile.get('transport') is None:
+            server=build_server(config)
+        else:raise ValueError('Unknown profile transport')
     except (ValueError,DomainError,OSError,KeyError) as error:
         message=error.code if isinstance(error,DomainError) else 'agent_setup_required'
         print(json.dumps({'error':message}),file=sys.stderr)
