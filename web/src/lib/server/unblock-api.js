@@ -84,7 +84,7 @@ export function createService(config) {
       }
       if (['attention','recover'].includes(operation)) {
         if (body.request_id && !requests.some(r=>r.id===body.request_id && allowed(r))) throw new Error('Request not permitted');
-        return {principal,requests:requests.filter(r=>allowed(r) && (!body.request_id || r.id===body.request_id)),expectations:expectations.filter(r=>allowedExpectation(r) && (!body.request_id || r.request_id===body.request_id)),grants:agent?[]:events.filter(e=>e.kind==='enroll').map(e=>{let revoked=false;try{enrollmentRecord(e.payload.grant_id,events);}catch{revoked=true;}return {record_id:e.id,agent_id:e.agent_id,intent_id:e.intent_id,...e.payload,revoked};}),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
+        return {principal,requests:requests.filter(r=>allowed(r) && (!body.request_id || r.id===body.request_id)),expectations:expectations.filter(r=>allowedExpectation(r) && (!body.request_id || r.request_ids.includes(body.request_id))),grants:agent?[]:events.filter(e=>e.kind==='enroll').map(e=>{let revoked=false;try{enrollmentRecord(e.payload.grant_id,events);}catch{revoked=true;}return {record_id:e.id,agent_id:e.agent_id,intent_id:e.intent_id,...e.payload,revoked};}),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
       }
       if(operation==='work_update') {
         if(principal.kind!=='agent')throw new Error('Enrolled worker required');
@@ -99,11 +99,15 @@ export function createService(config) {
         if(new Set(reviewed).size!==reviewed.length || (reviewed.length && (!existing || reviewed.some(p=>!existing.history.some((/** @type {any} */ e)=>e.id===p)))))throw new Error('Unknown or duplicate expectation parent');
         const request_id=body.request_id==null?null:reference(body.request_id);
         if(request_id && !requests.some(r=>r.id===request_id && r.agent_id===grant.agent_id))throw new Error('Linked request not permitted');
-        if(existing && (existing.request_id!==request_id || existing.environment!==principal.environment))throw new Error('Expectation request or environment binding changed');
         const payload={work_key,summary:text(body,'summary'),context:text(body,'context',16000),evidence:text(body,'evidence',16000),next_action:text(body,'next_action'),parents:reviewed,status:text(body,'status',20),next_update_at:body.next_update_at,request_id,environment:principal.environment};
         const event={schema:'unblock/1',intent_id:text(body,'intent_id',160),kind:'work_update',expectation_id,agent_id:grant.agent_id,payload};
         const retry=canonicalRecord(event);
         if(rows.some(r=>r.id===retry.id && r.note===retry.note))return {record_id:retry.id,expectation_id,visibility:'visible'};
+        if(existing && existing.environment!==principal.environment)throw new Error('Expectation environment binding changed');
+        if(existing && (existing.link_conflict || existing.request_id!==request_id)) {
+          const knownLinks=existing.revisions.map((/** @type {any} */ e)=>e.payload.request_id);
+          if(!existing.link_conflict || !knownLinks.includes(request_id) || existing.revisions.some((/** @type {any} */ e)=>!reviewed.includes(e.id)))throw new Error('Expectation request binding changed without complete conflict review');
+        }
         if(!['working','completed','cancelled'].includes(payload.status))throw new Error('Invalid expectation status');
         if(payload.status==='working') {
           if(!Number.isInteger(payload.next_update_at) || payload.next_update_at<=now() || payload.next_update_at>now()+30*86400)throw new Error('Expected update must be in the next 30 days');

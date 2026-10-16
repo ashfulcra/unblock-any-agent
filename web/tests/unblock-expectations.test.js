@@ -100,3 +100,24 @@ test('pre-namespace pilot expectation keeps its identity, exact retry and histor
  assert.equal(changed.expectation_id,legacy);const row=(await agent('attention')).expectations[0];assert.equal(row.history.length,2);assert.equal(row.observations.length,1);
  assert.equal((await agent('work_update',update)).record_id,record.id);await owner('identity');
 });
+
+test('concurrent initial question links retain conflicts and exact receipts independent of source order',async()=>{
+ const {f,agent,monitor}=await setup();
+ const need=async(/** @type {string} */ key)=>{const r=await agent('request',{intent_id:key,need_key:key,need:key,context:key,recommendation:key,next_action:key,parents:[]});f.publish();return r;};
+ const a=await need('a-link'),b=await need('b-link');
+ const one=await agent('work_update',{...update,intent_id:'link-a',request_id:a.request_id});
+ const two=await agent('work_update',{...update,intent_id:'link-b',request_id:b.request_id});f.publish();
+ let row=(await agent('attention')).expectations[0];assert.equal(row.state,'conflict');assert.equal(row.request_id,null);assert.equal(row.link_conflict,true);assert.deepEqual([...row.request_ids].sort(),[a.request_id,b.request_id].sort());
+ assert.equal((await agent('work_update',{...update,intent_id:'link-b',request_id:b.request_id})).record_id,two.record_id);
+ await assert.rejects(()=>agent('work_update',{...update,intent_id:'partial-link',parents:[one.record_id],request_id:b.request_id,next_update_at:1100}));
+ await agent('work_update',{...update,intent_id:'reviewed-links',parents:[one.record_id,two.record_id],request_id:b.request_id,next_update_at:1100});f.publish();row=(await agent('attention')).expectations[0];assert.equal(row.request_id,b.request_id);assert.equal(row.link_conflict,false);assert.equal(row.history.length,3);
+ assert.equal((await agent('work_update',{...update,intent_id:'link-a',request_id:a.request_id})).record_id,one.record_id);
+ assert.equal((await agent('recover',{request_id:a.request_id})).expectations.length,1);
+});
+
+test('null is also a conflicting initial link and cannot bypass all-head review',async()=>{
+ const {f,agent}=await setup();const need=await agent('request',{intent_id:'null-link-need',need_key:'null-link-need',need:'Synthetic',context:'Synthetic',recommendation:'Synthetic',next_action:'Synthetic',parents:[]});f.publish();
+ const one=await agent('work_update',update),two=await agent('work_update',{...update,intent_id:'null-other',request_id:need.request_id});f.publish();
+ await assert.rejects(()=>agent('work_update',{...update,intent_id:'partial-null',parents:[one.record_id],next_update_at:1100}));
+ await agent('work_update',{...update,intent_id:'all-null',parents:[one.record_id,two.record_id],next_update_at:1100});f.publish();assert.equal((await agent('attention')).expectations[0].link_conflict,false);
+});

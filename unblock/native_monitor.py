@@ -117,7 +117,10 @@ class NativeMonitor:
             rows,now=self._source(me);self._reconcile(rows,me)
         except (*SOURCE_ERRORS,ValueError,KeyError,TypeError):return self._summary(False,'source_unavailable_or_unverified')
         with self.ledger() as db:
-            db.execute('BEGIN IMMEDIATE');db.execute('DELETE FROM known')
+            db.execute('BEGIN IMMEDIATE')
+            if not {x[0] for x in db.execute('SELECT id FROM known')}.issubset({r['id'] for r in rows}):
+                return self._summary(False,'overlapping_snapshot_missing_known_work')
+            db.execute('DELETE FROM known')
             db.executemany('INSERT INTO known VALUES (?,?)',[(r['id'],json.dumps(r,sort_keys=True)) for r in rows if r['state'] not in ['completed','cancelled']])
             for row in rows:
                 if len(row['revisions'])!=1:continue
