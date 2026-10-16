@@ -28,6 +28,7 @@ class OwnerFixture:
         if operation=='attention':return {'source':'checked','principal':{'kind':'owner','id':self.owner_id},'grants':copy.deepcopy(self.grants)}
         if operation=='prepare_enrollment':return {'expires_at':self.clock+3600}
         if operation!='enroll':raise AssertionError('Unexpected owner operation')
+        if data['expires_at']<=self.clock:raise DomainError('expired_body',400)
         self.calls.append(copy.deepcopy(data))
         if self.block:self.block[0].set();self.block[1].wait(3)
         gid=str(uuid.uuid5(uuid.NAMESPACE_URL,data['agent_id']+data['intent_id']));rid=str(uuid.uuid5(uuid.NAMESPACE_URL,json.dumps(data,sort_keys=True)))
@@ -53,6 +54,13 @@ class NativeRenewalTests(unittest.TestCase):
         profile=private_read(self.profile);self.assertTrue(profile['token'].startswith('sealed-'));self.assertEqual(profile['expires_at'],first['expires_at'])
         self.assertEqual(self.renewal().tick()['renewed'],0)
         self.owner.offline=True;result=self.renewal().tick();self.assertFalse(result['checked']);self.assertEqual(private_read(self.profile),profile)
+
+    def test_expired_pending_readback_is_reconciled_before_a_new_intent(self):
+        self.owner.lose=True;self.renewal().tick();first=self.owner.calls[0];self.owner.clock+=70
+        pending=self.renewal().tick();self.assertTrue(pending['checked']);self.assertEqual(pending['pending'],1);self.assertTrue(pending['errors']);self.assertEqual(len(self.owner.calls),1)
+        self.owner.publish();reconciled=self.renewal().tick();self.assertTrue(reconciled['checked']);self.assertEqual(private_read(self.profile)['token'],'original')
+        retry=self.renewal().tick();self.assertTrue(retry['checked']);self.assertNotEqual(self.owner.calls[-1]['intent_id'],first['intent_id']);self.assertGreater(self.owner.calls[-1]['expires_at'],self.owner.clock)
+        state=private_read(self.state);self.assertEqual(state['entries'][ANCHOR]['expired_visible'][0]['body'],first)
 
     def test_anchor_or_latest_revocation_stops_renewal_without_reenrolling(self):
         self.owner.grants[0]['revoked']=True;self.assertFalse(self.renewal().tick()['checked']);self.assertEqual(self.owner.calls,[])

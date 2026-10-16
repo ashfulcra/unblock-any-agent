@@ -98,7 +98,7 @@ class Renewal:
         return scope
 
     def tick(self):
-        state={};result={'checked':True,'renewed':0,'pending':0,'unchanged':0}
+        state={};result={'checked':True,'renewed':0,'pending':0,'unchanged':0,'errors':[]}
         try:
             with self._lock():
                 if self.state.exists():state=private_read(self.state)
@@ -119,6 +119,16 @@ class Renewal:
                         if expiry<=self.now():raise DomainError('operator_session_expired_reconnect',401)
                         pending={'body':{**scope,'intent_id':'renew:'+str(uuid.uuid4()),'expires_at':expiry}}
                         entry['pending']=pending;self._save(state) # Durable before any enrollment attempt.
+                    if pending['body']['expires_at']<=self.now():
+                        body=pending['body'];visible=[g for g in grants if g.get('intent_id')==body['intent_id'] and g['agent_id']==scope['agent_id']]
+                        if len(visible)>1:raise DomainError('operator_expired_intent_ambiguous_reconcile',409)
+                        if visible:
+                            grant=visible[0]
+                            if grant.get('revoked') or grant['expires_at']!=body['expires_at'] or self._scope(grant)!=scope:raise DomainError('operator_expired_intent_changed_or_revoked',403)
+                            entry.setdefault('expired_visible',[]).append({'body':body,'record_id':grant['record_id']});del entry['pending'];self._save(state)
+                        result['pending']+=1
+                        result['errors'].append({'anchor_grant_id':anchor,'code':'expired_intent_read_back_next_tick' if visible else 'expired_intent_pending_readback','repair':'Retain the exact expired intent until native readback verifies it. Only a verified expired record permits a new intent on a later tick.'})
+                        continue
                     response=self.owner.call('enroll',pending['body'])
                     pending['response']={k:response[k] for k in ('record_id','grant_id','credential')}
                     self._save(state)
