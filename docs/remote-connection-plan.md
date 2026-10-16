@@ -50,3 +50,7 @@ The explicit-profile desktop plugin test now covers discovery, checked recovery 
 Use two distinct authorized test accounts to prove isolation and a personal fork. The clean source/example-only configuration already builds; the second-account deployment remains pending selection of its intended owner. Official publication additionally needs the chosen verified publisher and source license, eligibility, reviewer access, listing metadata and actual portal checks. The private plugin's account-normalized author fields do not select the public publisher.
 
 The canonical source, skill, fork instructions and star links remain at [ashfulcra/unblock-any-agent](https://github.com/ashfulcra/unblock-any-agent).
+
+## Source candidate checkpoint — 2026-10-16
+
+The [reproducible issuer adapter](../integrations/fulcra-issuer/README.md) now carries the optional source integration against pinned Fulcra MCP 1.2.5, preserving its existing upstream configuration and callback. A fresh review found two Important issues; one fix pass added exact renewal reconciliation and public-client revocation. The locked suite passes 435 tests, including 83 new focused cases. The adapter is disabled by default. Real GCS, upstream login, deployed issuer/ChatGPT acceptance and operational receiver work remain open; no dashboard OAuth client registration is required.
