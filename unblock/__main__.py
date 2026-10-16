@@ -32,7 +32,7 @@ def parser():
     sub.add_parser('attention');sub.add_parser('recent')
     revoke=sub.add_parser('revoke');revoke.add_argument('principal_id')
     listener=sub.add_parser('listen');listener.add_argument('--routes',required=True);listener.add_argument('--environment',required=True);listener.add_argument('--state',default='.state/delivery.db');listener.add_argument('--once',action='store_true');listener.add_argument('--interval',type=float,default=60)
-    demo=sub.add_parser('demo-worker');demo.add_argument('--output',required=True,help='Private synthetic output directory; performs no external action')
+    demo=sub.add_parser('demo-worker');demo.add_argument('--output',required=True,help='Private synthetic output directory; performs no external action');demo.add_argument('--request-id',help='Validated work reference instead of stdin')
     return p
 
 
@@ -72,7 +72,8 @@ def main():
                     if args.once:return
                     time.sleep(args.interval)
             elif args.command=='demo-worker':
-                payload=json.load(sys.stdin);rid=payload['request_id'];work=client.call('GET','/api/requests/'+rid)
+                import uuid
+                rid=str(uuid.UUID(args.request_id or json.load(sys.stdin)['request_id']));work=client.call('GET','/api/requests/'+rid)
                 current=[r for r in work['responses'] if not r['stale']]
                 if not current:raise ValueError('No current answer')
                 response=current[-1]

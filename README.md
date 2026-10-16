@@ -2,7 +2,7 @@
 
 Help agents obtain what they need and continue their work. Agents needing a human are priority zero; help from another agent uses the same product experience. Continuity preserves useful context, decisions, artifacts, and outstanding work across sessions and authorized handoffs.
 
-This repository currently contains planning documents. Product code, installable plugins, deployment, and marketplace submissions have not been created.
+A working local proof now includes an authenticated request/answer service, a minimal human dashboard, a CLI, durable recovery and an environment listener. See [Run the local proof](docs/local-proof.md). Official plugin packages, remote OAuth/MCP integration and public deployment are still in progress.
 
 ## Planning documents
 
