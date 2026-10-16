@@ -23,7 +23,7 @@ function failure(error) {
 }
 /** @param {any} service @param {string} token */
 function workerServer(service,token) {
- const server=new McpServer({name:'unblock',version:'0.4.0'},{instructions:'Recover owned work before acting. Pending receipts require exact readback. Review the current question and complete answer set; reconcile uncertain actions before effects. This transport supplies no owner authentication, command execution, background listener, OAuth flow or event subscription.'});
+ const server=new McpServer({name:'unblock',version:'0.4.0'},{capabilities:{tools:{listChanged:false}},instructions:'Recover owned work before acting. Pending receipts require exact readback. Review the current question and complete answer set; reconcile uncertain actions before effects. This transport supplies no owner authentication, command execution, background listener, OAuth flow or event subscription.'});
  const read={readOnlyHint:true,destructiveHint:false,openWorldHint:false};
  const write={readOnlyHint:false,destructiveHint:false,openWorldHint:false};
  const ref=z.uuid(),text=z.string().min(1),key=text.max(160);

@@ -22,7 +22,7 @@ const need={key:'http-proof',need:'Choose color',context:'Synthetic context',rec
 
 test('modern SDK seven-tool loop retains pending/readback, revision and replacement history',async t=>{
  const f=fixture(),a=await enroll(f),h=createNativeMcp({service:f.service,origin}),{client:c,methods}=await connect(t,h,()=>a.credential);
- assert.deepEqual((await c.listTools()).tools.map(x=>x.name).sort(),['ask_for_help','recover_work','get_work','revise_need','record_progress','begin_action','reconcile_action'].sort());assert.ok(methods.includes('server/discover'));
+ assert.deepEqual((await c.listTools()).tools.map(x=>x.name).sort(),['ask_for_help','recover_work','get_work','revise_need','record_progress','begin_action','reconcile_action'].sort());assert.ok(methods.includes('server/discover'));assert.equal(c.getServerCapabilities()?.tools?.listChanged,false);
  const r=data(await call(c,'ask_for_help',need));assert.equal(r.visibility,'pending');assert.equal(data(await call(c,'recover_work')).requests.length,0);f.publish();assert.equal(data(await call(c,'get_work',{request_id:r.request_id})).agent_id,'alpha');
  const revised=data(await call(c,'revise_need',{request_id:r.request_id,parent_revisions:[r.record_id],need:'Updated question',context:'Corrected context',recommendation:'Blue',next_action:'Private marker'}));f.publish();await c.close();
  await f.service.handle('answer',{cookieToken:f.token,body:{intent_id:'answer',request_id:r.request_id,revision:revised.record_id,answer:'Only synthetic blue'}});f.publish();
