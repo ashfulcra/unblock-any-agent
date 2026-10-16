@@ -6,6 +6,8 @@ Status: revision required after independent Fable review, 2026-10-16. This speci
 
 The [Tycho-delegated Fable review](../../reviews/2026-10-16-fable-spec-review.md) of commit `102e3ce` recommends **revise first**. Its findings are retained as review claims pending validation. Before implementation planning, resolve the monitor runtime and credential custody (F1), MCP authorization-server path (F2), agent identity binding (F3), and future multi-human response write path (F4). Validate the remaining platform and release findings against current sources. Reviewer naming and scope recommendations remain proposals; they do not override the user’s requirements.
 
+The [review-resolution brief](../../review-resolution.md) now proposes concrete architecture decisions and the first build sequence. Those recommendations require review before replacing the provisional architecture below.
+
 ## Release outcome
 
 A human can find what their agents need, answer once, and see work continue. Requests and useful context survive the original session. The web app, Claude plugin, ChatGPT plugin, and installable skills all provide useful entry points into this same flow.
