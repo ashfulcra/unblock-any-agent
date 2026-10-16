@@ -1,6 +1,6 @@
 # Listener setup for connected agents
 
-Planning-stage guide, 2026-10-16. The shared product tools are not implemented yet. Use this as the required onboarding and verification contract; it is not a claim that installing the skill starts a listener. Exact service/tool commands will accompany the implementation. Runtime-native examples below require the connected client to be installed and authenticated.
+Onboarding contract, 2026-10-16. A local implementation is available in [local proof](local-proof.md) and [local plugins](local-plugins.md). The broader runtime-native recipes below still require the actual client, credentials and destination to be configured and verified. Installing the skill does not start a listener.
 
 Every connected agent needs a way to notice newly available work. The minimum release includes a Claude route and instructions for every other runtime. Native plugins or equivalents for additional platforms can follow later.
 

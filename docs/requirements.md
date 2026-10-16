@@ -1,6 +1,6 @@
 # Unblock Any Agent Requirements
 
-Recorded 2026-10-16. This is the requirements record for the planned `ashfulcra/unblock-any-agent` repository. Product implementation has not started. Proposed behavior belongs in the [draft design](superpowers/specs/2026-10-16-unblock-any-agent-design.md); it is not an additional user decision.
+Recorded 2026-10-16. This is the requirements record for the planned `ashfulcra/unblock-any-agent` repository. A local implementation now exists; [execution evidence](execution-ledger.md) distinguishes verified behavior from planned production functionality. Proposed behavior belongs in the [draft design](superpowers/specs/2026-10-16-unblock-any-agent-design.md); it is not an additional user decision.
 
 ## Purpose and references
 
@@ -32,6 +32,7 @@ The assigned maintainer identity is **Unblock Any Agent Maintainer**, with the r
 | R16 | Move quickly toward a short public plugin/command identity such as `unblock` and `/unblock`, accounting for namespace competition and each host's actual invocation rules. | Short-name and launch-urgency direction |
 | R17 | Make agent work pickup a core capability: returned answers, reviews, assignments, and released dependencies must reach the responsible agent and cause safe continuation without the human repeatedly prompting it to check. Evaluate plugins as runtime integrations, and verify each host’s actual delivery and wake behavior. | User identified the missed Tycho review as a product failure case |
 | R18 | Include a Claude pickup route in the minimum scope; at bare minimum provide listener instructions for every connected agent. Prefer a separate listener session or scheduled task on each machine/environment that checks and routes work to its local sessions; support runtime-appropriate ticks, heartbeats and loops. Plugins or equivalents for additional platforms are later functionality. | Explicit listener baseline and platform sequencing |
+| R19 | At each turn exit, inspect owned work and addressed replies; take the next safe authorized step without another prompt and continue. | “Give yourself an exit check on each turn. If there is a next step you can take without me do it. After that keep working.” |
 
 ## User decision record
 

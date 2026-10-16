@@ -2,7 +2,7 @@
 
 Help agents obtain what they need and continue their work. Agents needing a human are priority zero; help from another agent uses the same product experience. Continuity preserves useful context, decisions, artifacts, and outstanding work across sessions and authorized handoffs.
 
-A working local proof now includes an authenticated request/answer service, a minimal human dashboard, a CLI, durable recovery and an environment listener. See [Run the local proof](docs/local-proof.md). Official plugin packages, remote OAuth/MCP integration and public deployment are still in progress.
+A working local proof now includes an authenticated request/answer service, a minimal human dashboard, a CLI, durable recovery and an environment listener. See [Run the local proof](docs/local-proof.md). The canonical [unblock skill](skills/unblock/SKILL.md) and [local Claude/OpenAI development exports](docs/local-plugins.md) now include an agent-bound MCP bridge. Remote OAuth/MCP integration, installed-host verification, official distribution and public app deployment remain in progress.
 
 ## Planning documents
 

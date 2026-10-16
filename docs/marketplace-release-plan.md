@@ -1,6 +1,6 @@
 # Unblock Marketplace Release and Naming Plan
 
-Planning baseline: 2026-10-16. Goal: publish useful Claude and ChatGPT plugins through their official public distribution surfaces, moving quickly toward the short `unblock` identity. This document records current requirements and proposed packaging; no package, portal draft, namespace reservation, or public submission has been created.
+Planning baseline: 2026-10-16. Goal: publish useful Claude and ChatGPT plugins through their official public distribution surfaces, moving quickly toward the short `unblock` identity. This document records current requirements and packaging. [Local development exports](local-plugins.md) now exist and pass format checks; no portal draft, namespace reservation, public submission or official install is claimed.
 
 ## Preferred names
 
@@ -72,3 +72,7 @@ Broader features can follow this first useful release. Official packaging and di
 - Keep official-directory acceptance, official-Code-marketplace placement, name allocation, and GitHub distribution as distinct results.
 
 Use the current [Claude pre-submission checklist](https://claude.com/docs/plugins/pre-submission-checklist), [OpenAI field requirements](https://developers.openai.com/plugins/deploy/submission#manifest-fields), and [OpenAI validation errors](https://developers.openai.com/plugins/deploy/submission-errors) rather than freezing all portal limits into product code. Re-check these requirements for the actual release date.
+
+## Local MCP submission route verified 2026-10-16
+
+OpenAI also documents desktop-only packages containing a local stdio MCP server. Submission requires partner approval and organization allowlisting through an OpenAI representative; the portal then uses its Skills only upload flow, including local MCP configuration. A clean desktop install and the standard publisher requirements still apply. This is distinct from a skills-only public package that later adds remote MCP. Our current portable export is a local development package and does not establish access to this route. For ChatGPT web, retain the remote HTTPS/OAuth plan. [Desktop-only submission](https://developers.openai.com/plugins/deploy/desktop-only)
