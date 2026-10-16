@@ -54,3 +54,8 @@ The canonical source, skill, fork instructions and star links remain at [ashfulc
 ## Source candidate checkpoint — 2026-10-16
 
 The [reproducible issuer adapter](../integrations/fulcra-issuer/README.md) now carries the optional source integration against pinned Fulcra MCP 1.2.5, preserving its existing upstream configuration and callback. A fresh review found two Important issues; one fix pass added exact renewal reconciliation and public-client revocation. The locked suite passes 435 tests, including 83 new focused cases. The adapter is disabled by default. Real GCS, upstream login, deployed issuer/ChatGPT acceptance and operational receiver work remain open; no dashboard OAuth client registration is required.
+
+
+## Executable acceptance operations
+
+The pinned adapter now includes a two-client disposable GCS probe and explicit scoped pending-record inspection/requested-revocation recovery. Its [operator instructions](../integrations/fulcra-issuer/README.md#bounded-acceptance-and-recovery-tooling) distinguish read-only checks, exact source recovery, private durable reports and remaining receiver coverage. The expanded locked source suite passes 470 tests; actual GCS and remote ChatGPT acceptance still await the authorized environment. No production issuer or web authentication configuration changed.

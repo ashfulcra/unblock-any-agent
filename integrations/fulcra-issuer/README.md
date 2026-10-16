@@ -20,7 +20,7 @@ uv sync --locked
 uv run --locked pytest -q
 ```
 
-`manifest.json` pins the upstream commit, patch digest and resulting changed-file digests. The locked source suite passes 435 tests, with 16 inherited skips, five inherited expected failures and one inherited warning. The patch contains the source, HTTP and concurrency tests, and `docs/unblock-issuer.md` operator instructions. It changes no production configuration. Keep upstream's existing license and the accompanying `LICENSE.upstream` notice with upstream context; Unblock's public publisher/license choices remain release prerequisites.
+`manifest.json` pins the upstream commit, patch digest and resulting changed-file digests. The locked source suite passes 470 tests, with 16 inherited skips, five inherited expected failures and one inherited warning. The patch contains the source, HTTP and concurrency tests, and `docs/unblock-issuer.md` operator instructions. It changes no production configuration. Keep upstream's existing license and the accompanying `LICENSE.upstream` notice with upstream context; Unblock's public publisher/license choices remain release prerequisites.
 
 ## Scope
 
@@ -31,3 +31,14 @@ Pilot policy requires an explicit resource list. A later explicit all-owned poli
 Before enabling the shared service, obtain its operator's approval and an authorized disposable-object test bucket, verify GCS CAS across two clients, and validate upstream login on the existing callback origin or an already-authorized staging callback. Then validate actual ChatGPT connection, expiry/reconnect/revocation and replacement recovery before advertising that issuer in a dashboard's protected-resource metadata. Establish the operational receiver for unresolved source/credential effects before claiming unattended coverage.
 
 The existing Fulcra webapp skill already handles dashboard authentication and managed deployment. This optional integration is the remaining remote plugin connection work, not a prerequisite for building or forking the web app.
+
+
+## Bounded acceptance and recovery tooling
+
+The patched source now includes `python -m fulcra_mcp.unblock_probe` and `python -m fulcra_mcp.unblock_operator`. Their `--help` commands discover no credentials. Full commands and scope rules are in the patched `docs/unblock-issuer.md`.
+
+The probe uses two clients and exactly two synthetic hashed objects under a UUID-scoped `unblock-acceptance/<label>` prefix. It validates exact submitted CAS/claim records and conditionally cleans only its own objects. A private recovery manifest, including its directory entry, is synced before credential discovery/effects. `--cleanup-only` reuses that frozen manifest and retains the original outcome across retries.
+
+The operator inspects at most 64 explicit code keys for one exact dashboard resource. It reports allowlisted metadata; unavailable or malformed source stays unresolved. It is read-only unless `--recover-revocations` is supplied, and then only already-requested revocations may be reconciled after a fresh provider resource check. Each finite invocation needs a new private report. It installs no scheduler, enumerates no new work and proves no unattended receiver coverage.
+
+A fresh source review found three Important issues in these tools; all were reproduced and fixed in one pass. The 35 added cases use generation-aware storage doubles and the actual provider. Real bucket acceptance still requires an authorized operator environment; neither local fixtures nor source publication replaces that check.
