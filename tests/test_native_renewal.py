@@ -104,6 +104,19 @@ class NativeRenewalTests(unittest.TestCase):
         self.assertEqual(self.owner.calls[-1]['renewal_of'],profile['grant_id'])
         self.owner.publish();self.assertEqual(self.renewal().tick()['renewed'],1)
 
+    def test_revoked_connection_preserves_pending_without_starving_healthy_connection(self):
+        second='22222222-2222-4222-8222-222222222222';other=self.root/'beta.json'
+        private_write(other,{'transport':'fulcra-native','url':self.owner.url,'token':'beta-original'})
+        self.owner.grants.append({**self.owner.grants[0],'grant_id':second,'record_id':'beta-anchor','agent_id':'beta','name':'Beta','agent_ids':['beta']})
+        self.config.write_text(json.dumps({'url':self.owner.url,'enrollments':[{'anchor_grant_id':ANCHOR,'profile':str(self.profile)},{'anchor_grant_id':second,'profile':str(other)}]}))
+        self.renewal().tick();pending=private_read(self.state)['entries'][ANCHOR]['pending'];self.owner.publish();self.owner.grants[0]['revoked']=True
+        result=self.renewal().tick()
+        self.assertFalse(result['checked']);self.assertEqual(result['renewed'],1);self.assertTrue(result['errors'])
+        self.assertEqual(private_read(self.profile)['token'],'original');self.assertNotEqual(private_read(other)['token'],'beta-original')
+        self.assertEqual(private_read(self.state)['entries'][ANCHOR]['pending'],pending)
+        self.owner.clock+=40;self.owner.offline=True;before=len(self.owner.calls)
+        self.assertFalse(self.renewal().tick()['checked']);self.assertEqual(len(self.owner.calls),before)
+
     def test_anchor_or_latest_revocation_stops_renewal_without_reenrolling(self):
         self.owner.grants[0]['revoked']=True;self.assertFalse(self.renewal().tick()['checked']);self.assertEqual(self.owner.calls,[])
         self.owner.grants[0]['revoked']=False;self.make_visible();profile=private_read(self.profile);before=len(self.owner.calls)

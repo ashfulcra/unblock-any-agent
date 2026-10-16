@@ -20,9 +20,11 @@ A fresh whole-branch reviewer inspected the four-commit branch against its plan,
 
 Both combined regressions failed before the fixes and passed afterwards. The author verified the fixes; the reviewer was not asked to repeat its review.
 
+A separate [returned repository review](https://github.com/ashfulcra/unblock-any-agent/pull/4#discussion_r4298119192) identified a revoked selected connection starving later healthy selections. A two-connection regression failed before the fix. Connection-specific reconciliation failures now retain that connection’s pending state and profile while permitting fresh verified healthy selections to renew. Owner/source failures still stop the whole tick; storage errors also remain fatal to preserve durability.
+
 ## Validation and remaining limits
 
-The complete Python suite passed **77 tests**; all **21 web tests** passed. Svelte check reported zero errors and two inherited template warnings, and the production build passed. Both copied manifest commands discovered seven tools and recovered work with a fresh dependency cache; Claude strict package validation passed. Version 0.3.0 exports exclude operator/owner modules. Private-binding source scanning passed.
+The complete Python suite passed **78 tests**; all **21 web tests** passed. Svelte check reported zero errors and two inherited template warnings, and the production build passed. Both copied manifest commands discovered seven tools and recovered work with a fresh dependency cache; Claude strict package validation passed. Version 0.3.0 exports exclude operator/owner modules. Private-binding source scanning passed.
 
 The CLI returns structured status: inspect `checked`, `pending` and `errors`, not process exit alone. An unseen expired enrollment remains pending until exact readback or owner reconciliation. Same-account OS compromise and measured large-history optimization remain outside this pilot's demonstrated boundary.
 
