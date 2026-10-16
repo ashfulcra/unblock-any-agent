@@ -1,6 +1,6 @@
 # Fulcra native pilot
 
-The first hosted needs/answer/continuity slice uses the official Fulcra sign-in and native annotation persistence. No new OAuth client or external database is required. This is a single-owner pilot; marketplace installation, unattended renewal, other host pickup routes and a second account's clean fork are separate acceptance checks.
+The first hosted needs/answer/continuity slice uses the official Fulcra sign-in and native annotation persistence. No new OAuth client or external database is required. This is a single-owner pilot; an explicit trusted renewal operator has passed bounded live checks. Persistent startup, marketplace installation, other host pickup routes and a second account’s clean fork remain separate acceptance checks.
 
 ## Connect an agent
 

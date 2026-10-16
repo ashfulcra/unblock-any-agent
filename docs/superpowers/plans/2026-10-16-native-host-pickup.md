@@ -54,6 +54,6 @@
 - [x] Write failing tests for role/environment isolation, no overlap, lost source retention, queued-vs-ack and explicit expired-claim reconciliation.
 - [x] Implement native tick/listen/recover commands and a restricted synthetic native worker/Claude route. A separate process must exist before a synthetic human answer.
 - [x] Run delayed production answer → listener → native Claude restricted session → exact artifact readback/progress; repeat replacement and stopped-route negative cases. Keep private state outside source.
-- [ ] Fresh independent review of complete slice, one evidence-backed fix pass, then source/CI/readback and real harness evidence. Do not mark full M3 complete while ChatGPT/renewal/marketplace outcomes remain open; preserve exact remaining tasks.
+- [x] Fresh independent review of complete slice, one evidence-backed fix pass, then source/CI/readback and real harness evidence. Do not mark full M3 complete while ChatGPT/renewal/marketplace outcomes remain open; preserve exact remaining tasks.
 
 Self-review: every failure class maps to Task 1/2/3 tests; hosted scope and actual Claude behavior require live checks. This adds a native transport and uses existing verified dispatch mechanics; it does not inherit local backend topology or claim native wake on other platforms. Ash's standing continuous-execution instruction supplies the execution method; proceed inline without repeating architecture/permission prompts for reversible authorized work.
