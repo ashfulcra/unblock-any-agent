@@ -4,7 +4,7 @@ Hosted baseline: https://unblock-any-agent.my.fulcra.ai
 
 Canonical source, shared skills, forks and optional stars: https://github.com/ashfulcra/unblock-any-agent
 
-Based on the official [Fulcra Svelte template](https://github.com/fulcradynamics/app-template-svelte/tree/613a3d817df7933e73b6fb9cbda86fd7377b8e6b). The supplied public Fulcra client/device-flow configuration works locally and after deployment. **No new OAuth application, callback allowlist or separate database is required for the web baseline.** Authentication behavior is preserved; changes to supporting auth files are typing/equivalent defaults only. The hosted baseline currently provides sign-in and the owner-only build harness; needs/responses are the next milestone.
+Based on the official [Fulcra Svelte template](https://github.com/fulcradynamics/app-template-svelte/tree/613a3d817df7933e73b6fb9cbda86fd7377b8e6b). The supplied public Fulcra client/device-flow configuration works locally and after deployment. **No new OAuth application, callback allowlist or separate database is required for the web baseline.** Authentication behavior is preserved; changes to supporting auth files are typing/equivalent defaults only. The hosted single-owner pilot provides sign-in, the owner-only build harness, scoped short-lived agent enrollment, needs/answers and retained replacement recovery. See [native pilot setup and limits](../docs/native-pilot.md).
 
 ## Local setup
 
