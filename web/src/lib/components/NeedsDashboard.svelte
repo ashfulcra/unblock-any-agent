@@ -1,5 +1,5 @@
 <script>
-  import { editDraft, reviewDraft, submitDraft } from '$lib/answer-draft.js';
+  import { editDraft, reviewDraft, submitDraft, failedAnswer } from '$lib/answer-draft.js';
   import { onMount } from 'svelte';
   /** @type {any[]} */ let requests=$state([]);
   /** @type {any[]} */ let grants=$state([]);
@@ -11,6 +11,7 @@
   let credential=$state('');
   let expires=$state('');
   let notice=$state('');
+  /** @type {any} */ let pendingEnrollment=$state(null);
   /** @type {Record<string,string>} */ let answers=$state({});
   /** @type {Record<string,any>} */ let drafts=$state({});
   /** @type {Record<string,any>} */ let pending=$state({});
@@ -20,6 +21,7 @@
       const res=await fetch('/api/unblock/attention');const data=await res.json();
       if(!res.ok)throw new Error(data.error);
       requests=data.requests;grants=data.grants;checked=data.checked_at;error='';
+      if(pendingEnrollment && grants.some(g=>g.intent_id===pendingEnrollment.intent_id)){pendingEnrollment=null;sessionStorage.removeItem('unblock-enrollment');notice='Enrollment read back. The credential is ready until its displayed expiry.';}
       for(const [id,body] of Object.entries(pending)) {
         const row=requests.find(r=>r.id===id);
         if(row && [...row.answers,...row.stale_answers].some(a=>a.intent_id===body.intent_id && a.payload.answer===body.answer)) {
@@ -31,15 +33,20 @@
   /** @param {string} operation @param {any} body */
   async function post(operation,body) {
     const res=await fetch('/api/unblock/'+operation,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const data=await res.json();if(!res.ok)throw new Error(data.error);return data;
+    const data=await res.json();if(!res.ok){const failure=/** @type {Error & {writeOutcome?:string}} */ (new Error(data.error));failure.writeOutcome=data.outcome || 'uncertain';throw failure;}return data;
   }
   async function enroll() {
     busy=true;error='';credential='';
     try {
-      const data=await post('enroll',{intent_id:crypto.randomUUID(),agent_id:agentId,name:agentName});
+      if(!pendingEnrollment){
+        const response=await fetch('/api/unblock/prepare_enrollment');const prepared=await response.json();if(!response.ok)throw new Error(prepared.error);
+        pendingEnrollment={intent_id:crypto.randomUUID(),agent_id:agentId,name:agentName,expires_at:prepared.expires_at};sessionStorage.setItem('unblock-enrollment',JSON.stringify(pendingEnrollment));
+      }
+      const data=await post('enroll',pendingEnrollment);
+      if(pendingEnrollment){pendingEnrollment=failedAnswer(pendingEnrollment,'uncertain');sessionStorage.setItem('unblock-enrollment',JSON.stringify(pendingEnrollment));}
       credential=data.credential;expires=new Date(data.expires_at*1000).toLocaleString();notice=data.visibility==='visible'?'Enrollment is visible.':'Enrollment accepted; wait for it to appear below before using the credential.';
       await refresh();
-    } catch(e){error=(/** @type {Error} */(e)).message;}finally{busy=false;}
+    } catch(e){const failure=/** @type {Error & {writeOutcome?:string}} */(e);error=failure.message;if(pendingEnrollment){pendingEnrollment=failedAnswer(pendingEnrollment,failure.writeOutcome || 'uncertain');if(pendingEnrollment)sessionStorage.setItem('unblock-enrollment',JSON.stringify(pendingEnrollment));else sessionStorage.removeItem('unblock-enrollment');}}finally{busy=false;}
   }
   /** @param {any} row */
   async function answer(row) {
@@ -50,9 +57,15 @@
     }
     busy=true;error='';
     try {
-      const data=await post('answer',pending[row.id]);notice=data.visibility==='visible'?'Answer read back. Waiting for agent pickup.':'Answer accepted; checking native persistence. This does not mean the agent resumed.';
+      const data=await post('answer',pending[row.id]);if(pending[row.id]){pending[row.id]=failedAnswer(pending[row.id],'uncertain');sessionStorage.setItem('unblock-answer:'+row.id,JSON.stringify(pending[row.id]));}notice=data.visibility==='visible'?'Answer read back. Waiting for agent pickup.':'Answer accepted; checking native persistence. This does not mean the agent resumed.';
       await refresh();
-    }catch(e){error=(/** @type {Error} */(e)).message;}finally{busy=false;}
+    }catch(e){
+      const failure=/** @type {Error & {writeOutcome?:string}} */(e);
+      const retained=failedAnswer(pending[row.id],failure.writeOutcome || 'uncertain');
+      if(retained){pending[row.id]=retained;sessionStorage.setItem('unblock-answer:'+row.id,JSON.stringify(retained));}
+      else{delete pending[row.id];sessionStorage.removeItem('unblock-answer:'+row.id);}
+      error=failure.message;
+    }finally{busy=false;}
   }
   /** @param {any} grant */
   async function revoke(grant) {
@@ -61,6 +74,7 @@
     catch(e){error=(/** @type {Error} */(e)).message;}finally{busy=false;}
   }
   onMount(()=>{
+    try{pendingEnrollment=JSON.parse(sessionStorage.getItem('unblock-enrollment')||'null');if(pendingEnrollment){agentId=pendingEnrollment.agent_id;agentName=pendingEnrollment.name;}}catch{}
     for(let i=0;i<sessionStorage.length;i++) {
       const k=sessionStorage.key(i);
       if(k?.startsWith('unblock-draft:'))try{const body=JSON.parse(sessionStorage.getItem(k)||'null');if(body?.request_id){drafts[body.request_id]=body;answers[body.request_id]=body.answer;}}catch{}
@@ -92,7 +106,7 @@
       {#if row.revisions.length>1}<p class="mt-3">Conflicting question revisions need agent reconciliation before answering.</p>
       {:else}
         <label class="mt-4 block" for={'answer-'+row.id}>Your answer</label>
-        <textarea id={'answer-'+row.id} class="textarea mt-2 w-full bg-black/30 text-white" rows="3" bind:value={answers[row.id]} oninput={(e)=>{drafts[row.id]=editDraft(drafts[row.id],row.id,row.revisions[0].id,e.currentTarget.value);sessionStorage.setItem('unblock-draft:'+row.id,JSON.stringify(drafts[row.id]));}} disabled={!!pending[row.id]}></textarea>
+        <textarea id={'answer-'+row.id} class="textarea mt-2 w-full bg-black/30 text-white" rows="3" maxlength="16000" bind:value={answers[row.id]} oninput={(e)=>{drafts[row.id]=editDraft(drafts[row.id],row.id,row.revisions[0].id,e.currentTarget.value);sessionStorage.setItem('unblock-draft:'+row.id,JSON.stringify(drafts[row.id]));}} disabled={!!pending[row.id]}></textarea>
         {#if drafts[row.id] && !pending[row.id] && drafts[row.id].revision!==row.revisions[0].id}
           <p class="mt-3" role="alert">The question changed while you were composing. Review the current question before sending this draft.</p>
           <button class="btn mt-2" onclick={()=>{drafts[row.id]=reviewDraft(drafts[row.id],row.revisions[0].id);sessionStorage.setItem('unblock-draft:'+row.id,JSON.stringify(drafts[row.id]));}}>I reviewed the updated question</button>
@@ -113,15 +127,15 @@
   <details class="mt-8 rounded-xl border border-white/20 p-5">
     <summary class="cursor-pointer text-lg font-semibold">Connect an agent</summary>
     <p class="mt-3 text-sm">Credentials are limited to the enrolled agent and expire with this sign-in session, within one hour. Renew enrollment when expired. Keep them in the agent's private credential storage.</p>
-    <label class="mt-4 block" for="agent-id">Agent ID</label><input id="agent-id" class="input mt-1 w-full bg-black/30 text-white" placeholder="my-agent" bind:value={agentId}/>
-    <label class="mt-3 block" for="agent-name">Display name</label><input id="agent-name" class="input mt-1 w-full bg-black/30 text-white" bind:value={agentName}/>
-    <button class="btn mt-4" disabled={busy || !agentId || !agentName} onclick={enroll}>Enroll agent</button>
+    <label class="mt-4 block" for="agent-id">Agent ID</label><input id="agent-id" class="input mt-1 w-full bg-black/30 text-white" placeholder="my-agent" bind:value={agentId} disabled={!!pendingEnrollment}/>
+    <label class="mt-3 block" for="agent-name">Display name</label><input id="agent-name" class="input mt-1 w-full bg-black/30 text-white" bind:value={agentName} disabled={!!pendingEnrollment}/>
+    <button class="btn mt-4" disabled={busy || !agentId || !agentName} onclick={enroll}>{pendingEnrollment?'Retry same enrollment':'Enroll agent'}</button>
     {#if credential}
       <label class="mt-4 block" for="agent-credential">Private agent credential · expires {expires}</label>
       <textarea id="agent-credential" class="textarea mt-2 w-full bg-black/30 text-white" readonly value={credential} rows="3"></textarea>
       <button class="btn btn-sm mt-2" onclick={()=>{credential='';}}>Hide credential</button>
     {/if}
-    <ul class="mt-4 space-y-2">{#each grants as grant (grant.grant_id)}<li>{grant.name} · {grant.revoked?'revoked':new Date(grant.expires_at*1000).getTime()<Date.now()?'expired':'enrolled'} {#if !grant.revoked}<button class="btn btn-xs ml-2" disabled={busy} onclick={()=>revoke(grant)}>Revoke</button>{/if}</li>{/each}</ul>
+    <ul class="mt-4 space-y-2">{#each grants as grant (grant.record_id)}<li>{grant.name} · {grant.revoked?'revoked':new Date(grant.expires_at*1000).getTime()<Date.now()?'expired':'enrolled'} {#if !grant.revoked}<button class="btn btn-xs ml-2" disabled={busy} onclick={()=>revoke(grant)}>Revoke</button>{/if}</li>{/each}</ul>
   </details>
   <p class="mt-6 text-sm"><a class="underline" href="https://github.com/ashfulcra/unblock-any-agent/blob/main/docs/native-pilot.md" target="_blank" rel="noopener noreferrer">Agent setup and pilot limits</a></p>
 </section>

@@ -4,7 +4,7 @@ The first hosted needs/answer/continuity slice uses the official Fulcra sign-in 
 
 ## Connect an agent
 
-Sign in to your dashboard, expand **Connect an agent**, and enroll its stable ID and display name. Save the displayed credential in that agent's private credential storage. It is encrypted and scoped by the server to that agent. Do not give the agent your browser cookie or Fulcra access token. Enrollment is pending until its record appears in the dashboard.
+Sign in to your dashboard, expand **Connect an agent**, and enroll its stable ID and display name. Save the displayed credential in that agent's private credential storage. It is encrypted and scoped by the server to that agent. Do not give the agent your browser cookie or Fulcra access token. Enrollment is pending until its record appears in the dashboard. The owner UI prepares a fixed expiry and retains the same enrollment intent across uncertain/pending retries. Direct owner integrations first GET `prepare_enrollment`, then POST `enroll` with that fixed `expires_at`, identity and stable intent; requested expiry cannot exceed the upstream session or one hour.
 
 A pilot credential expires with the originating Fulcra access token, within one hour. Sign in and enroll again when it expires. No refresh token is stored or embedded, and the pilot does not promise unattended renewal. A replacement session can use an unexpired credential for the same agent; enrolling another ID creates another agent. Revoke an enrollment in the dashboard; native processing is asynchronous, so revocation is confirmed only after readback. Rotating the server sealing key invalidates all outstanding credentials and makes old signed pilot records unavailable unless the key is retained; keep it private and backed up.
 
@@ -21,6 +21,8 @@ The pilot endpoint is `/api/unblock/<operation>` on your saved dashboard origin.
 | `progress` | POST JSON: `intent_id`, `request_id`, current `revision`, complete current `answers` ID array, `stage` (`acknowledged`, `resumed`, `completed`) and observed `evidence`. Multiple answers also require `reconciled: true`; the agent must actually reconcile them before reporting it. |
 | `action` | POST JSON: `intent_id`, `request_id`, intended `effect`, before an external action. Does not execute it. |
 | `settle` | POST JSON: `intent_id`, `request_id`, `action` record ID and actual observed `evidence`. Check the real result before repeating an uncertain action. |
+
+Errors explicitly distinguish `outcome: rejected` before ingestion from `outcome: uncertain` after an attempted write. Keep the original intent after any uncertain attempt, even when a later retry is rejected. An already-recorded identical progress retry succeeds as historical evidence without resolving newer work.
 
 Mutation results include the physical `record_id`, logical `request_id` where relevant, and `visibility`: `pending` means accepted for ingestion, not persisted, delivered or acted upon. Read attention/recovery until the exact event appears. Retry an uncertain publication with identical fields and intent; do not invent a new intent just because readback is delayed. A changed payload is retained as a separate physical record. An answer names the immutable question revision shown to the human. Old or conflicting answers remain history rather than silently resolving a newer question.
 

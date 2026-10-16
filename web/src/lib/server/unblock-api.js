@@ -31,9 +31,13 @@ export function createService(config) {
   /** @param {string} token @param {any} event */
   async function publish(token,event) {
     const record=canonicalRecord(event),signed={note:record.note,mac:mac(record.note)};
+    try {
     await upstream(token,'ingest/v1/record/MomentAnnotation?api_version=v1alpha1',{method:'POST',headers:{'Content-Type':'application/x-jsonl'},body:JSON.stringify({...record,note:JSON.stringify(signed),sources:['com.fulcradynamics.annotation.'+annotation.split('/')[1]]})+'\n'});
     const visible=(await load(token)).some(r=>r.id===record.id && r.note===record.note);
     return {record_id:record.id,request_id:event.request_id,visibility:visible?'visible':'pending'};
+    } catch (err) {
+      const failure=/** @type {Error & {publication_uncertain?:boolean}} */(err);failure.publication_uncertain=true;throw failure;
+    }
   }
   /** @param {any} b @param {string} field @param {number} [max] */
   function text(b,field,max=4000) {
@@ -58,7 +62,13 @@ export function createService(config) {
       const requests=view(rows);
       if (['attention','recover'].includes(operation)) {
         if (body.request_id && !requests.some(r=>r.id===body.request_id && (!agent || r.agent_id===grant.agent_id))) throw new Error('Request not permitted');
-        return {requests:requests.filter(r=>(!agent || r.agent_id===grant.agent_id) && (!body.request_id || r.id===body.request_id)),grants:agent?[]:events.filter(e=>e.kind==='enroll').map(e=>({agent_id:e.agent_id,...e.payload,revoked:events.some(r=>r.kind==='revoke' && r.payload.grant_id===e.payload.grant_id)})),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
+        return {requests:requests.filter(r=>(!agent || r.agent_id===grant.agent_id) && (!body.request_id || r.id===body.request_id)),grants:agent?[]:events.filter(e=>e.kind==='enroll').map(e=>({record_id:e.id,agent_id:e.agent_id,intent_id:e.intent_id,...e.payload,revoked:events.some(r=>r.kind==='revoke' && r.payload.grant_id===e.payload.grant_id)})),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
+      }
+      if (operation==='prepare_enrollment') {
+        if (agent) throw new Error('Owner operation required');
+        const exp=JSON.parse(Buffer.from(token.split('.')[1],'base64url').toString()).exp;
+        if (!Number.isFinite(exp) || exp<=now()) throw new Error('Owner session expired');
+        return {expires_at:Math.min(exp,Math.floor(now())+3600)};
       }
       const intent_id=text(body,'intent_id',160);
       if (['enroll','revoke','answer'].includes(operation) && agent) throw new Error('Owner operation required');
@@ -66,9 +76,11 @@ export function createService(config) {
         const agent_id=text(body,'agent_id',100),name=text(body,'name',100);
         if (!/^[a-z0-9][a-z0-9-]*$/.test(agent_id)) throw new Error('Invalid agent ID');
         const exp=JSON.parse(Buffer.from(token.split('.')[1],'base64url').toString()).exp;
-        const expires_at=Math.min(exp,now()+3600);
-        if (!Number.isFinite(expires_at) || expires_at<=now()) throw new Error('Owner session expired');
         const grant_id=stableId(user.userid+':'+agent_id+':'+intent_id);
+        const original=events.find(e=>e.kind==='enroll' && e.payload.grant_id===grant_id);
+        const expires_at=body.expires_at ?? original?.payload.expires_at ?? (exp<=Math.floor(now())+3600?exp:NaN);
+        if (!Number.isFinite(expires_at) || expires_at<=now() || expires_at>exp || expires_at>Math.floor(now())+3600) throw new Error('Prepare a stable enrollment expiry within the current session and one hour');
+        if (original && (original.payload.name!==name || original.payload.expires_at!==expires_at)) throw new Error('Enrollment intent already has different fields');
         const newGrant={agent_id,grant_id,owner_id:user.userid,expires_at,upstream:token};
         const saved=await publish(token,{schema:'unblock/1',intent_id,kind:'enroll',agent_id,payload:{grant_id,name,expires_at}});
         return {...saved,agent_id,grant_id,expires_at,credential:sealAgent(newGrant,config.key)};
@@ -100,6 +112,10 @@ export function createService(config) {
       if (operation==='progress') {
         const revision=text(body,'revision',100),stage=text(body,'stage',30),evidence=text(body,'evidence',16000);
         const answers=body.answers;
+        if (Array.isArray(answers) && answers.every(a=>typeof a==='string')) {
+          const retry=canonicalRecord({...base,payload:{revision,stage,evidence,answers:[...answers].sort(),reconciled:body.reconciled===true}});
+          if(rows.some(r=>r.id===retry.id && r.note===retry.note)) return {record_id:retry.id,request_id,visibility:'visible'};
+        }
         if (!['acknowledged','resumed','completed'].includes(stage) || !Array.isArray(answers) || answers.length===0 || new Set(answers).size!==answers.length || answers.some(a=>!request.answers.some((/** @type {any} */ r)=>r.id===a)) || request.revisions.length!==1 || request.revisions[0].id!==revision || answers.length!==request.answers.length) throw new Error('Current question and complete answer set required');
         if (answers.length>1 && body.reconciled!==true) throw new Error('Conflicting answers require explicit reconciliation');
         return publish(token,{...base,payload:{revision,stage,evidence,answers:[...answers].sort(),reconciled:body.reconciled===true}});

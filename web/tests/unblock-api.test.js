@@ -5,21 +5,22 @@ import { createService } from '../src/lib/server/unblock-api.js';
 
 // External Fulcra processing is represented by accepted and then visible records;
 // all authority, sealing, scope, projection and pending/readback logic is real.
-function fixture() {
+function fixture(expires=2000) {
+ let clock=1000;
  /** @type {any[]} */ let visible=[];
  /** @type {any[]} */ let accepted=[];
- let offline=false;
+ let offline=false,failAfterWrite=false;
  const owner='owner-account';
- const token='header.'+Buffer.from(JSON.stringify({exp:2000})).toString('base64url')+'.signature';
- const service=createService({ownerId:owner,annotation:'MomentAnnotation/11111111-1111-4111-a111-111111111111',key:randomBytes(32).toString('hex'),now:()=>1000,fetch:async(/** @type {string} */ url,/** @type {any} */ options)=>{
+ const token='header.'+Buffer.from(JSON.stringify({exp:expires})).toString('base64url')+'.signature';
+ const service=createService({ownerId:owner,annotation:'MomentAnnotation/11111111-1111-4111-a111-111111111111',key:randomBytes(32).toString('hex'),now:()=>clock,fetch:async(/** @type {string} */ url,/** @type {any} */ options)=>{
    const path=new URL(url).pathname;
    if(path==='/user/v1alpha1/info') return Response.json({userid:options.headers.Authorization==='Bearer '+token ? owner:'foreign'});
    if(offline) return new Response('unavailable',{status:503});
    if(path.startsWith('/data/')) return Response.json(visible);
-   if(path==='/ingest/v1/record/MomentAnnotation') {const row=JSON.parse(options.body);if(!accepted.some(x=>x.id===row.id))accepted.push(row);return Response.json({upload_id:'accepted'},{status:201});}
+   if(path==='/ingest/v1/record/MomentAnnotation') {const row=JSON.parse(options.body);if(!accepted.some(x=>x.id===row.id))accepted.push(row);if(failAfterWrite)offline=true;return Response.json({upload_id:'accepted'},{status:201});}
    throw Error('Unexpected upstream path '+path);
  }});
- return {service,token,publish:()=>{visible=[...accepted]},fail:()=>{offline=true}};
+ return {service,token,failAfterWrite:()=>{failAfterWrite=true},advance:(/** @type {number} */ seconds)=>{clock+=seconds},publish:()=>{visible=[...accepted]},fail:()=>{offline=true}};
 }
 const need={intent_id:'i1',need_key:'color',need:'Choose color',context:'Page work',recommendation:'Blue',next_action:'Apply color',parents:[]};
 
@@ -59,4 +60,32 @@ test('settlement retries succeed after readback and preserve changed evidence va
  const first=await agent('settle',body);f.publish();const retry=await agent('settle',body);assert.equal(retry.record_id,first.record_id);f.publish();
  assert.equal((await agent('attention',{})).requests[0].settlements.length,1);
  await agent('settle',{...body,evidence:'Additional observed evidence'});f.publish();assert.equal((await agent('attention',{})).requests[0].settlements.length,2);
+});
+
+test('enrollment retries use one stable expiry before and after ingestion visibility',async()=>{
+ const f=fixture(20000),body={intent_id:'stable-enrollment',agent_id:'alpha',name:'Alpha',expires_at:4300};
+ const enroll=()=>f.service.handle('enroll',{cookieToken:f.token,body});
+ const first=await enroll();f.advance(10);const pendingRetry=await enroll();
+ assert.equal(first.record_id,pendingRetry.record_id);assert.equal(first.expires_at,4300);f.publish();f.advance(10);const visibleRetry=await enroll();assert.equal(visibleRetry.record_id,first.record_id);
+ assert.equal((await f.service.handle('attention',{cookieToken:f.token,body:{}})).grants.length,1);
+ await assert.rejects(()=>f.service.handle('enroll',{cookieToken:f.token,body:{...body,intent_id:'bad',expires_at:999999}}));
+});
+
+test('recorded progress retries remain historical after answers or question revisions change',async()=>{
+ const f=fixture();const owner=(/** @type {string} */ op,/** @type {any} */ body)=>f.service.handle(op,{cookieToken:f.token,body});
+ const e=await owner('enroll',{intent_id:'a',agent_id:'alpha',name:'Alpha'});f.publish();
+ const agent=(/** @type {string} */ op,/** @type {any} */ body)=>f.service.handle(op,{token:e.credential,body});
+ const req=await agent('request',need);f.publish();const firstAnswer=await owner('answer',{intent_id:'answer-a',request_id:req.request_id,revision:req.record_id,answer:'Blue'});f.publish();
+ const body={intent_id:'progress-a',request_id:req.request_id,revision:req.record_id,answers:[firstAnswer.record_id],stage:'resumed',evidence:'Observed blue marker'};
+ const progress=await agent('progress',body);f.publish();
+ await owner('answer',{intent_id:'answer-b',request_id:req.request_id,revision:req.record_id,answer:'Red'});f.publish();
+ assert.equal((await agent('progress',body)).record_id,progress.record_id);assert.equal((await agent('attention',{})).requests[0].state,'answer_conflict');
+ await assert.rejects(()=>agent('progress',{...body,intent_id:'new-stale-progress'}));
+ await agent('request',{...need,intent_id:'new-question',context:'Changed question',parents:[req.record_id]});f.publish();
+ assert.equal((await agent('progress',body)).record_id,progress.record_id);assert.equal((await agent('attention',{})).requests[0].state,'needs_you');
+});
+
+test('a lost readback after ingestion is an uncertain write rather than a definite rejection',async()=>{
+ const f=fixture();const e=await f.service.handle('enroll',{cookieToken:f.token,body:{intent_id:'a',agent_id:'alpha',name:'Alpha'}});f.publish();f.failAfterWrite();
+ await assert.rejects(()=>f.service.handle('request',{token:e.credential,body:need}),(/** @type {any} */ error)=>error.publication_uncertain===true);
 });
