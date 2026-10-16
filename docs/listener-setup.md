@@ -1,5 +1,7 @@
 # Listener setup for connected agents
 
+Missed expected updates use the separate check-only [native monitor](native-detection.md), which can run with an appropriately scoped listener profile and its own private receipt ledger. It records concerns without launching work. A verified answer-delivery route does not establish automatic investigation dispatch or currently healthy background detection.
+
 Onboarding contract, 2026-10-16. Native Fulcra and loopback implementations are available in [local proof](local-proof.md) and [local plugins](local-plugins.md). The broader runtime-native recipes below still require the actual client, credentials and destination to be configured and verified. Installing the skill does not start a listener.
 
 Every connected agent needs a way to notice newly available work. The minimum release includes a Claude route and instructions for every other runtime. Native plugins or equivalents for additional platforms can follow later.

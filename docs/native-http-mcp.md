@@ -1,6 +1,6 @@
 # Native worker MCP over HTTP
 
-The native pilot also exposes its seven worker tools at `/mcp` through the official MCP SDK. Modern2026-07-28 and legacy stateless clients use the same scoped native service and retained context. The server requires a current sealed worker grant on every request; owner cookies/tokens and listener credentials cannot enable these worker tools.
+The native pilot exposes eight worker tools at `/mcp` through the official MCP SDK. Modern2026-07-28 and legacy stateless clients use the same scoped native service and retained context. The server requires a current sealed worker grant on every request; owner cookies/tokens and listener credentials cannot enable these worker tools.
 
 ## Enable the endpoint
 
@@ -10,7 +10,7 @@ Requests must target that origin with its matching Host. A browser Origin, when 
 
 Use an existing private native worker profile from [pilot enrollment](native-pilot.md). Keep its token in your runtime’s private HTTP credential configuration; the source manifest contains no token. For a JavaScript client, use `@modelcontextprotocol/client`2.3.1, `Client` with `versionNegotiation: {mode: 'auto'}`, and `StreamableHTTPClientTransport` pointed to the profile origin plus `/mcp`. Supply the profile’s sealed credential as the Bearer header through transport configuration, never a shell argument or browser URL. Discover tools and call `recover_work` before doing anything else. A response whose source failed cannot establish an empty queue.
 
-The seven tools and argument names match the native stdio bridge: `ask_for_help`, `recover_work`, `get_work`, `revise_need`, `record_progress`, `begin_action`, `reconcile_action`. UUID references and exact reviewed revisions/answer sets come from the current source. A stable key and identical retry body preserve an uncertain write; pending receipts require exact readback before claiming visibility. Action tools retain intent/evidence and execute no commands.
+The tools match the native stdio bridge: `ask_for_help`, `recover_work`, `get_work`, `revise_need`, `record_progress`, `begin_action`, `reconcile_action` and native-only `record_work_update`. The last declares an expected update without inventing a human question; see [declared-update detection](native-detection.md). UUID references and exact reviewed revisions/answer sets come from the current source. A stable key and identical retry body preserve an uncertain write; pending receipts require exact readback before claiming visibility. Action tools retain intent/evidence and execute no commands.
 
 ## Host and release status
 
