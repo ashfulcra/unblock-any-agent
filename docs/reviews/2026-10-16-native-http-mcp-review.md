@@ -17,8 +17,10 @@ A fresh whole-branch reviewer found zero Critical issues, one Important issue an
 
 The author verified these fixes; no repeat review was requested. Host/Origin restrictions, streamed size limits, strict schemas, per-request principal isolation, expiry/revocation, pending/readback, Unicode retry intent parity and post-ingestion uncertainty are covered by actual SDK-client tests. Modern and legacy stateless clients are exercised; change subscriptions are explicitly disabled.
 
+A separate [returned repository review](https://github.com/ashfulcra/unblock-any-agent/pull/6#discussion_r4298522804) identified an advertised 200-character action key exceeding the native service's 160-character intent limit. A real SDK regression accepted 160 characters and failed because 161 still reached native dispatch. The HTTP schema now uses the shared 160-character key bound; both boundaries pass and an overlong key is rejected before dispatch. This returned finding was picked up without a human reminder.
+
 ## Validation and limits
 
-All 36 web tests passed, Svelte check reported zero errors and two inherited template warnings, and the production build passed. The unchanged Python runtime previously passed 78 tests, and version 0.4.0 exports passed strict package and seven-tool launch checks. Worker packages omit owner/operator modules. Credentials and live private bindings remain outside source.
+All 37 web tests passed, Svelte check reported zero errors and two inherited template warnings, and the production build passed. The unchanged Python runtime previously passed 78 tests, and version 0.4.0 exports passed strict package and seven-tool launch checks. Worker packages omit owner/operator modules. Credentials and live private bindings remain outside source.
 
 This is a verified native bearer transport and bounded continuity proof. Actual ChatGPT remote authorization, event delivery, official marketplace acceptance, persistent host startup and clean second-account deployment remain separate work. Dashboard interaction used the bounded authenticated QA proxy; a fresh interactive production-origin sign-in and independent reviewer replay were not claimed. Eventual source visibility and reconciliation remain required; universal exactly-once external effects are not claimed. See [transport setup](../native-http-mcp.md).

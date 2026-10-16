@@ -72,3 +72,13 @@ for(const kind of ['network','timeout','json']){
   f.sourceFault(kind,2);const r=await call(client,'recover_work');assert.equal(r.isError,true);assert.match(JSON.stringify(r.content),/source_unavailable_work_remains_pending/);
  });
 }
+
+test('action key accepts the service boundary and rejects an overlong key before dispatch',async t=>{
+ const f=fixture(),a=await enroll(f);let actions=0;
+ const service={handle:async(/** @type {string} */ op,/** @type {any} */ input)=>{if(op==='action')actions++;return f.service.handle(op,input);}};
+ const h=createNativeMcp({service,origin}),{client}=await connect(t,h,()=>a.credential);
+ const request=data(await call(client,'ask_for_help',need));f.publish();
+ const args={request_id:request.request_id,key:'k'.repeat(160),description:'Boundary-only synthetic action'};
+ assert.equal(data(await call(client,'begin_action',args)).visibility,'pending');assert.equal(actions,1);
+ assert.equal((await call(client,'begin_action',{...args,key:'k'.repeat(161)})).isError,true);assert.equal(actions,1);
+});

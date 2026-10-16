@@ -48,7 +48,7 @@ function workerServer(service,token) {
   const payload={request_id:args.request_id,revision:args.revision,answers:[...args.answer_ids].sort(),stage:args.stage,evidence:args.evidence,reconciled:args.reconciled};
   return native('progress',{intent_id:intent('progress',payload),...payload});
  }));
- server.registerTool('begin_action',{description:'Retain and read back a stable action intent before an authorized effect. This tool executes nothing.',inputSchema:z.strictObject({request_id:ref,key:text.max(200),description:text.max(16000)}),annotations:write},args=>result(()=>native('action',{request_id:args.request_id,intent_id:args.key,effect:args.description})));
+ server.registerTool('begin_action',{description:'Retain and read back a stable action intent before an authorized effect. This tool executes nothing.',inputSchema:z.strictObject({request_id:ref,key,description:text.max(16000)}),annotations:write},args=>result(()=>native('action',{request_id:args.request_id,intent_id:args.key,effect:args.description})));
  server.registerTool('reconcile_action',{description:'Record actual checked action evidence; never blindly repeat an uncertain external effect.',inputSchema:z.strictObject({request_id:ref,action_id:ref,evidence:text.max(16000)}),annotations:write},args=>result(()=>{
   const payload={request_id:args.request_id,action:args.action_id,evidence:args.evidence};return native('settle',{intent_id:intent('settle',payload),...payload});
  }));
