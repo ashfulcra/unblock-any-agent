@@ -4,6 +4,8 @@ Help agents obtain what they need and continue their work. Agents needing a huma
 
 A working local proof now includes an authenticated request/answer service, a minimal human dashboard, a CLI, durable recovery and an environment listener. See [Run the local proof](docs/local-proof.md). The canonical [unblock skill](skills/unblock/SKILL.md) and [local Claude/OpenAI development exports](docs/local-plugins.md) now include an agent-bound MCP bridge. Remote OAuth/MCP integration, installed-host verification, official distribution and public app deployment remain in progress.
 
+[Create your own dashboard](docs/personal-dashboard.md): fork the canonical source, try it locally, and follow the Fulcra-hosted setup path with your own account. [Live integration prerequisites](docs/live-integration.md) distinguish what still needs a production service or host/account access.
+
 ## Planning documents
 
 - [Review resolution and next build](docs/review-resolution.md): proposed decisions for authentication, identity, storage and the first working loop.

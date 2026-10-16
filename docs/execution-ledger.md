@@ -40,3 +40,10 @@ Both development exports passed Claude strict validation and the current portabl
 
 
 Independent entry-point review: [raw report](reviews/2026-10-16-local-entrypoints-review.md), no actionable findings. Reviewer independently ran all 41 tests and checked agent-role rejection, ten foreign-principal operation denials and disconnected-service errors. Parent subsequently exercised both actual manifest launch commands with a clean dependency cache; seven tools and harmless authenticated recovery passed. This closes the package-process evidence gap, while actual host installation, portal eligibility and production integration remain unverified.
+
+
+Canonical repository created at https://github.com/ashfulcra/unblock-any-agent. Source commit `74bdde04bd6ce2743227a1880ac5aa9b1e7c642e` was read back through GitHub; README, canonical skill, MCP bridge and CI file matched local bytes. [Initial CI](https://github.com/ashfulcra/unblock-any-agent/actions/runs/38909810022) passed on Linux/Python 3.13 and 3.14. Source scan found no excluded state or credential-like values in the 45 source files checked.
+
+Added the requested prominent Create your own dashboard entry to the local web view and [fork/account/deploy/update instructions](personal-dashboard.md), with source and optional stars directed to the canonical repository. Native browser readback confirmed the visible link and exact canonical guide destination. Six HTTP checks passed after the change. Hosted deployment is expressly pending the real service boundary, not inferred from the local page.
+
+Remaining live gates are recorded in [live integration prerequisites](live-integration.md). Production OAuth client/origin and public runtime/durable store configuration are absent from this checkout/environment; they are linked owned prerequisites rather than replaced with invented values or personal tokens. Official host/portal acceptance and clean-account hosted deployment remain open. The maintainer exit check now also reads its private local checkpoint, refuses quiet on missing/mismatched checkpoint data, and notices released prerequisite tasks; seven focused exit-check tests passed.
