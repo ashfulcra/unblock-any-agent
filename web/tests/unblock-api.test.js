@@ -133,3 +133,23 @@ test('delivery supports a complete retained answer set beyond one hundred',async
  await f.service.handle('delivery',{token:listener.credential,body:{intent_id:'large-set-delivery',request_id:request.request_id,revision:request.record_id,answers:work.answers.map((/** @type {any} */ a)=>a.id),disposition:'queued',evidence:'Route observation only'}});f.publish();
  const observed=(await owner('attention',{})).requests[0];assert.equal(observed.deliveries.length,1);assert.equal(observed.progress.length,0);
 });
+
+test('enrollment metadata lets the authenticated connection identify its own lease without changing identity shape',async()=>{
+ const f=fixture();const enrolled=await f.service.handle('enroll',{cookieToken:f.token,body:{intent_id:'metadata-agent',agent_id:'alpha',name:'Alpha',kind:'agent',environment:'env'}});f.publish();
+ const identity=await f.service.handle('identity',{token:enrolled.credential});assert.deepEqual(Object.keys(identity).sort(),['agent_ids','environment','id','kind']);
+ const metadata=await f.service.handle('enrollment',{token:enrolled.credential});assert.equal(metadata.grant_id,enrolled.grant_id);assert.equal(metadata.expires_at,enrolled.expires_at);assert.equal(metadata.id,'alpha');assert.equal(metadata.kind,'agent');assert.equal(metadata.credential,undefined);
+ await assert.rejects(()=>f.service.handle('enrollment',{cookieToken:f.token}));
+});
+
+test('renewal inherits scope and ancestor revocation denies descendants even after the parent lease expires',async()=>{
+ const f=fixture(),owner=(/** @type {string} */ op,/** @type {any} */ body)=>f.service.handle(op,{cookieToken:f.token,body});
+ const parent=await owner('enroll',{intent_id:'root-lease',agent_id:'alpha',name:'Alpha',kind:'agent',environment:'env',expires_at:1030});f.publish();
+ const child=await owner('enroll',{intent_id:'child-lease',agent_id:'alpha',name:'Alpha',kind:'agent',environment:'env',expires_at:1100,renewal_of:parent.grant_id});f.publish();
+ f.advance(31);await assert.rejects(()=>f.service.handle('identity',{token:parent.credential}));assert.equal((await f.service.handle('identity',{token:child.credential})).id,'alpha');
+ const next=await owner('enroll',{intent_id:'next-lease',agent_id:'alpha',name:'Alpha',kind:'agent',environment:'env',expires_at:1150,renewal_of:child.grant_id});f.publish();
+ await assert.rejects(()=>owner('enroll',{intent_id:'expanded-scope',agent_id:'alpha',name:'Alpha',kind:'agent',environment:'neighbor',expires_at:1150,renewal_of:next.grant_id}));
+ await owner('revoke',{intent_id:'revoke-in-flight-parent',grant_id:child.grant_id});f.publish();
+ await assert.rejects(()=>f.service.handle('identity',{token:next.credential}));
+ assert.equal((await owner('attention',{})).grants.find((/** @type {any} */ g)=>g.grant_id===next.grant_id).revoked,true);
+ await assert.rejects(()=>owner('enroll',{intent_id:'after-revocation',agent_id:'alpha',name:'Alpha',kind:'agent',environment:'env',expires_at:1150,renewal_of:next.grant_id}));
+});

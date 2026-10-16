@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
-import { canonicalRecord, projectEvents, readEvents, stableId, sealAgent, openAgent, authorizeAgent } from './unblock-core.js';
+import { canonicalRecord, projectEvents, readEvents, stableId, sealAgent, openAgent, authorizeAgent, enrollmentRecord, grantScope } from './unblock-core.js';
 
 /** @param {any} config */
 export function createService(config) {
@@ -65,9 +65,13 @@ export function createService(config) {
       const principal=agent?{kind:grant.kind || 'agent',id:grant.agent_id,environment:grant.environment || 'pilot',agent_ids:grant.agent_ids || [grant.agent_id]}:{kind:'owner',id:user.userid};
       const allowed=(/** @type {any} */ r)=>!agent || (principal.kind==='listener'?principal.agent_ids.includes(r.agent_id):r.agent_id===grant.agent_id);
       if (operation==='identity') return principal;
+      if (operation==='enrollment') {
+        if (!agent) throw new Error('Enrolled connection required');
+        return {...principal,grant_id:grant.grant_id,expires_at:grant.expires_at};
+      }
       if (['attention','recover'].includes(operation)) {
         if (body.request_id && !requests.some(r=>r.id===body.request_id && allowed(r))) throw new Error('Request not permitted');
-        return {principal,requests:requests.filter(r=>allowed(r) && (!body.request_id || r.id===body.request_id)),grants:agent?[]:events.filter(e=>e.kind==='enroll').map(e=>({record_id:e.id,agent_id:e.agent_id,intent_id:e.intent_id,...e.payload,revoked:events.some(r=>r.kind==='revoke' && r.payload.grant_id===e.payload.grant_id)})),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
+        return {principal,requests:requests.filter(r=>allowed(r) && (!body.request_id || r.id===body.request_id)),grants:agent?[]:events.filter(e=>e.kind==='enroll').map(e=>{let revoked=false;try{enrollmentRecord(e.payload.grant_id,events);}catch{revoked=true;}return {record_id:e.id,agent_id:e.agent_id,intent_id:e.intent_id,...e.payload,revoked};}),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
       }
       if (operation==='delivery') {
         if (principal.kind!=='listener') throw new Error('Listener operation required');
@@ -96,13 +100,18 @@ export function createService(config) {
         if (!['agent','listener'].includes(kind) || typeof environment!=='string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(environment)) throw new Error('Invalid enrollment role or environment');
         const agent_ids=kind==='listener'?body.agent_ids:[agent_id];
         if (!Array.isArray(agent_ids) || !agent_ids.length || agent_ids.length>100 || agent_ids.some(id=>typeof id!=='string') || (kind==='listener' && agent_ids.some(id=>!events.some(e=>e.kind==='enroll' && e.agent_id===id && (e.payload.kind || 'agent')==='agent')))) throw new Error('Listener needs explicit enrolled agent IDs');
+        const renewal_of=body.renewal_of==null?null:text(body,'renewal_of',100);
+        if (renewal_of) {
+          const parent=enrollmentRecord(renewal_of,events);
+          if (parent.payload.name!==name || grantScope(parent.agent_id,parent.payload)!==grantScope(agent_id,{kind,environment,agent_ids})) throw new Error('Renewal must preserve the parent scope');
+        }
         const grant_id=stableId(user.userid+':'+agent_id+':'+intent_id);
         const original=events.find(e=>e.kind==='enroll' && e.payload.grant_id===grant_id);
         const expires_at=body.expires_at ?? original?.payload.expires_at ?? (exp<=Math.floor(now())+3600?exp:NaN);
         if (!Number.isFinite(expires_at) || expires_at<=now() || expires_at>exp || expires_at>Math.floor(now())+3600) throw new Error('Prepare a stable enrollment expiry within the current session and one hour');
-        if (original && (original.payload.name!==name || original.payload.expires_at!==expires_at || (original.payload.kind || 'agent')!==kind || (original.payload.environment || 'pilot')!==environment || JSON.stringify([...(original.payload.agent_ids || [agent_id])].sort())!==JSON.stringify([...agent_ids].sort()))) throw new Error('Enrollment intent already has different fields');
-        const newGrant={agent_id,grant_id,kind,environment,agent_ids,owner_id:user.userid,expires_at,upstream:token};
-        const saved=original?{record_id:original.id,visibility:'visible'}:await publish(token,{schema:'unblock/1',intent_id,kind:'enroll',agent_id,payload:{grant_id,name,expires_at,kind,environment,agent_ids}});
+        if (original && (original.payload.name!==name || original.payload.expires_at!==expires_at || (original.payload.kind || 'agent')!==kind || (original.payload.environment || 'pilot')!==environment || (original.payload.renewal_of || null)!==renewal_of || JSON.stringify([...(original.payload.agent_ids || [agent_id])].sort())!==JSON.stringify([...agent_ids].sort()))) throw new Error('Enrollment intent already has different fields');
+        const newGrant={agent_id,grant_id,kind,environment,agent_ids,renewal_of,owner_id:user.userid,expires_at,upstream:token};
+        const saved=original?{record_id:original.id,visibility:'visible'}:await publish(token,{schema:'unblock/1',intent_id,kind:'enroll',agent_id,payload:{grant_id,name,expires_at,kind,environment,agent_ids,renewal_of}});
         return {...saved,agent_id,grant_id,kind,environment,agent_ids,expires_at,credential:sealAgent(newGrant,config.key)};
       }
       if (operation==='revoke') {

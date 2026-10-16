@@ -11,7 +11,7 @@ async function handle({request,cookies,params,url}) {
   if (bearer && !bearer.startsWith('Bearer ')) return json({outcome:'rejected',error:'Invalid authorization'},{status:401,headers});
   const token=bearer?.slice(7);
   if (request.method==='POST' && !token && request.headers.get('origin')!==url.origin) return json({outcome:'rejected',error:'Same-origin owner request required'},{status:403,headers});
-  if (request.method==='GET' && !['identity','prepare_enrollment','attention','recover'].includes(operation)) return json({outcome:'rejected',error:'POST required'},{status:405,headers});
+  if (request.method==='GET' && !['identity','enrollment','prepare_enrollment','attention','recover'].includes(operation)) return json({outcome:'rejected',error:'POST required'},{status:405,headers});
   try {
     let body={};
     if (request.method==='POST') {
