@@ -2,7 +2,7 @@
 
 [Fork Unblock Any Agent](https://github.com/ashfulcra/unblock-any-agent/fork) to keep your dashboard changes under your own account. Shared skills, contributions and optional stars belong on the [original repository](https://github.com/ashfulcra/unblock-any-agent).
 
-The current dashboard works locally. A Fulcra-hosted version remains integration work: do not deploy the local bootstrap-auth server publicly. The [live integration prerequisites](live-integration.md#p1--registered-identity-provider-and-public-service) describe the service and authentication it must connect to.
+The local proof includes needs and responses. The [Fulcra-hosted baseline](https://unblock-any-agent.my.fulcra.ai) provides sign-in and an owner-only build harness from the official web-app template; hosted needs and responses are the next milestone. No new OAuth client registration is needed. The separate local bootstrap-auth server remains local. Follow the [Fulcra-native baseline](live-integration.md#p1--fulcra-native-web-baseline) for hosted setup.
 
 ## Try your fork locally
 
@@ -13,9 +13,9 @@ The current dashboard works locally. A Fulcra-hosted version remains integration
 
 ## Build the Fulcra-hosted version
 
-Use the current [Fulcra web-app skill](https://github.com/fulcradynamics/agent-skills/tree/main/skills/build-and-deploy-a-web-app) with your fork and your own account. Its default Svelte template supplies Fulcra sign-in; keep that flow intact while connecting the dashboard to the authenticated Unblock service. Follow its required baseline/evaluation workflow rather than claiming success from a deployment alone.
+Start with [`web/`](../web/README.md) in your fork. Use the current [Fulcra web-app skill](https://github.com/fulcradynamics/agent-skills/tree/main/skills/build-and-deploy-a-web-app) with your fork and your own account. Its default Svelte template supplies Fulcra sign-in; keep that flow intact while adding the dashboard through authenticated Fulcra APIs. Follow its required baseline/evaluation workflow rather than claiming success from a deployment alone.
 
-Connect the intended backend and workspace through the authenticated service. Keep service credentials and runtime settings outside Git and outside browser-delivered code. A fork does not grant access to anyone else's agents or data.
+Connect your intended Fulcra workspace and permitted data through the template's authenticated backend routes. Evaluate any additional backend only when a demonstrated requirement needs it. Keep service credentials and runtime settings outside Git and outside browser-delivered code. A fork does not grant access to anyone else's agents or data.
 
 Create one Fulcra deploy project for your dashboard, save its project identifier privately and reuse it for later deploys. Use the actual production domain returned by the service; do not guess availability of a `my.fulcra.ai` address. The user does not need a separate Vercel account for the documented Fulcra deployment route. [Fulcra deployment instructions](https://github.com/fulcradynamics/agent-skills/blob/main/skills/build-and-deploy-a-web-app/references/deploy.md)
 

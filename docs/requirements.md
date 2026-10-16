@@ -115,3 +115,8 @@ The dated references below record what was inspected for useful functionality an
 - [AICQ Claude mod](https://github.com/ashfulcra/fulcra-tools/tree/31f75bc1f4642ab9c3ef562fdf73ba5a74ca1bca/packages/aicq-claude-mod): collaboration UI, response modes, and universe map.
 - [AICQ session inbox fix](https://github.com/ashfulcra/fulcra-tools/commit/97d9c8be): separate per-session display state from the shared arrival ledger.
 - [Fulcra deployment flow](https://github.com/fulcradynamics/agent-skills/blob/c419b169128effbbb8d74fb775a5f960655cf959/skills/build-and-deploy-a-web-app/references/deploy.md): create or reuse a deployment project and verify its returned production domain.
+
+
+## 2026-10-16 authentication correction
+
+User: “you dont need a registered oauth client if you use the fulcra webapp skill”. Use the existing Fulcra template authentication and native deploy path. A new OAuth registration or separate custom backend/database is not a prerequisite for the hosted web baseline. Preserve the distinction between web sign-in and any later remote MCP resource authorization.

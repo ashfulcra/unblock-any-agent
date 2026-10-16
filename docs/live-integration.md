@@ -2,21 +2,23 @@
 
 The local proof and package-process checks pass. This is the next integration boundary, not a claim that the first public release is finished. Follow the first-release sequence: prove real OAuth/client linking and both advertised pickup routes before expanding the interface and detector.
 
-## P1 — Registered identity provider and public service
+## P1 — Fulcra-native web baseline
 
-The live OAuth proof needs an application registration for Unblock with Fulcra as upstream sign-in. Required inputs are the provider issuer/discovery URL, registered client ID, supported scopes/audience and token authentication method, and the exact public gateway origin. Register that origin plus `/auth/callback` with the provider. A public PKCE client need not have a secret; a confidential client must store its secret only in the deployment secret store. Do not reuse the maintainer's personal CLI token as a public service credential.
+Correction, 2026-10-16: a **new OAuth client registration is not required** to build this dashboard with the Fulcra web-app skill. Its official Svelte template already supplies Fulcra sign-in/device flow and public client configuration. Fulcra deploy projects provide the hosted app target. The maintainer's earlier registration/runtime gates incorrectly turned a proposed custom MCP backend into a prerequisite for all web work.
 
-Use a maintained MCP OAuth implementation for downstream discovery, PKCE/client registration, resource binding, durable grants, refresh and revocation. FastMCP's OAuth/OIDC proxy is a candidate, not an installed production boundary. Its documentation requires a registered upstream client and matching callback; public clients additionally need an explicit signing key. [Provider setup](https://gofastmcp.com/servers/auth/oauth-proxy#provider-setup-requirements)
+Use the supplied authentication flow unchanged, the authenticated Fulcra APIs and workspace/files/annotations, and the skill's deployment/evaluation harness. The working hosted baseline and populated owner-only harness passed independent evaluation at [unblock-any-agent.my.fulcra.ai](https://unblock-any-agent.my.fulcra.ai). [Evaluation evidence](reviews/2026-10-16-fulcra-baseline-review.md) distinguishes direct API checks from browser checks through a read-only authenticated QA proxy. Evaluate native persistence against the required retry, conflict and identity guarantees before introducing a separate store; a missing custom database URL does not block this baseline.
 
-The public service also needs a real hosting target and durable transactional storage. The loopback HTTP server refuses public bindings, and its SQLite files must not be placed on ephemeral serverless disks. Keep signing keys and grant storage stable across restarts. Neither a backend deployment target nor a production OAuth registration/credential reference is configured in this checkout or its runtime environment as of 2026-10-16.
+**Next action:** prove agent need → human answer → continuity with native Fulcra persistence, testing retry, conflict and scoped identity behavior before introducing another backend. M1 is complete: workspace and actual harness events were written/read back, the template was deployed using one saved project, anonymous/non-owner access was denied, and the completed run appeared in the owner dashboard. Existing CLI authentication supports tool-based evaluation. The skill treats the user's first interactive sign-in confirmation as a nonblocking outstanding item.
 
-**Unblock action:** provision or identify the intended public application runtime/store and registered upstream OAuth client; configure the exact origin/callback and provide secret references through that runtime's secret storage. Retain client metadata and callback readback without exposing secrets. Then implement the configured gateway and prove real sign-in, correct resource audience, account isolation, refresh, revocation and reconnect. Synthetic provider tests alone cannot close this live acceptance gate.
+A remote MCP authorization gateway is a separate integration question. If the chosen plugin service eventually needs its own OAuth resource boundary, verify that boundary against the actual Fulcra/MCP capabilities at that time. It is not a prerequisite for the Fulcra-hosted dashboard.
+
+Sources: [Fulcra web-app skill](https://github.com/fulcradynamics/agent-skills/tree/main/skills/build-and-deploy-a-web-app), [template client configuration](https://github.com/fulcradynamics/app-template-svelte/blob/main/.env.example), [Fulcra deployment path](https://github.com/fulcradynamics/agent-skills/blob/main/skills/build-and-deploy-a-web-app/references/deploy.md).
 
 ## P2 — Actual host pickup
 
 The restricted new Claude session route passed. The exact local package process also passed tool discovery and recovery. Actual installed Claude/ChatGPT plugin behavior, a busy target, closed-session behavior and ChatGPT MCP Events remain open integration cases. Test only the capabilities of the actual selected host. No account-level plugin install or new UI task was created by these source-development checks.
 
-**Unblock action:** connect the working service in each pilot host with the correct authenticated identity and its supported receiver; verify delayed delivery without a human check prompt, busy/replacement handling, queued-versus-acknowledged progress and stopped-receiver recovery. A separate environment listener remains the baseline where native wake is absent. Remote web tests depend on P1.
+**Unblock action:** connect the working service in each pilot host with the correct authenticated identity and its supported receiver; verify delayed delivery without a human check prompt, busy/replacement handling, queued-versus-acknowledged progress and stopped-receiver recovery. A separate environment listener remains the baseline where native wake is absent. Remote web tests use the Fulcra-native baseline in P1; plugin MCP authorization is assessed separately.
 
 ## P3 — Official publication
 
@@ -28,4 +30,4 @@ OpenAI's local MCP submission route requires approved-partner organization allow
 
 ## P4 — Personal hosted dashboards
 
-Use [personal dashboard instructions](personal-dashboard.md) for forking, account separation and the Fulcra deployment workflow. The current response view runs locally; a production fork must connect through P1 and preserve the owner's authentication. Hosted clean-account acceptance remains open.
+Use [personal dashboard instructions](personal-dashboard.md) for forking, account separation and the Fulcra deployment workflow. The current response view runs locally; a hosted sign-in/harness baseline is live, and a hosted fork follows P1 and preserves the supplied Fulcra authentication. Hosted clean-account acceptance remains open.
