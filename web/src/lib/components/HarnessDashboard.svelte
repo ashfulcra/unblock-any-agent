@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {runStatus as getRunStatus} from '$lib/harness-status.js';
   import { onMount, onDestroy } from 'svelte';
   import { env } from '$env/dynamic/public';
   import { marked } from 'marked';
@@ -165,14 +166,6 @@
   onDestroy(() => {
     if (refreshInterval) clearInterval(refreshInterval);
   });
-
-  function getRunStatus(run: any) {
-    const lastEvent = run.events[run.events.length - 1];
-    if (lastEvent.step === 'RUN_COMPLETE') return 'completed';
-    if (lastEvent.step === 'RUN_INCOMPLETE') return 'incomplete';
-    if (lastEvent.step === 'ESCALATE') return 'escalated';
-    return 'in-progress';
-  }
 
   function formatTimestamp(ts: string) {
     return new Date(ts).toLocaleString();
@@ -423,6 +416,7 @@
   .status-completed { background: var(--color-fulcra-teal-10); color: var(--color-fulcra-green-100); }
   .status-in-progress { background: var(--color-fulcra-lavender-25); color: var(--color-fulcra-purple-100); }
   .status-incomplete { background: #ffcdd2; color: var(--color-fulcra-error); }
+  .status-unknown { background: #eeeeee; color: #333333; }
   .status-escalated { background: #ffe0b2; color: #e65100; }
 
   .flow-chart {
