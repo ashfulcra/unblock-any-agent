@@ -2,7 +2,13 @@
 
 Status: proposed next integration, 2026-10-16. The Fulcra web baseline already uses the template's supplied public client, device flow, authenticated cookies and managed deployment. A new registered OAuth client or external database is not a prerequisite for that web app or its forks. Keep those working routes intact.
 
-## Evidence so far
+## Current checkpoint — 0.5.1
+
+The table below retains the original 0.4.x host observations. Canonical Claude 0.5.1 has since installed from GitHub in a fresh isolated configuration. Both current package launch commands expose eight native tools, including `record_work_update`, in fresh dependency environments. The existing private OpenAI plugin is 0.5.1 with all 25 saved files read back; no machine profile was bundled. That package update has not repeated the earlier account-host test or established ChatGPT web authorization.
+
+Pinned-provider and actual token-handler probes now identify the required issuer changes, and a read-only authenticated project lookup verified the existing owner/deployment/domain association. See the [resource integration design](superpowers/specs/2026-10-16-remote-issuer-integration.md) and [implementation plan](superpowers/plans/2026-10-16-remote-issuer-integration.md). No shared issuer has been changed or deployed.
+
+## Historical evidence at the 0.4.x checkpoint
 
 | Route | Observed result | Remaining limit |
 | --- | --- | --- |
@@ -19,7 +25,7 @@ Reuse existing Fulcra authorization capabilities before considering another auth
 
 The inspected Fulcra MCP implementation is pinned at [bb928b1](https://github.com/fulcradynamics/fulcra-context-mcp/tree/bb928b120901330c155e98e0beb1de973f4f52b9). Its [provider](https://github.com/fulcradynamics/fulcra-context-mcp/blob/bb928b120901330c155e98e0beb1de973f4f52b9/fulcra_mcp/provider.py) persists issued token/grant records and its [credential layer](https://github.com/fulcradynamics/fulcra-context-mcp/blob/bb928b120901330c155e98e0beb1de973f4f52b9/fulcra_mcp/credentials.py) handles upstream refresh. The inspected authorization state/code path is process-local, and does not establish propagation of a distinct Unblock resource. Reuse is a candidate integration, not an already available connection.
 
-The preferred feasibility slice is a separate Unblock protected resource alongside the existing authorization service, with only the seven worker operations. Confirm an extension point and deployment authority before changing the shared service. Preserve the existing Fulcra resource and its clients. Do not add all personal-data tools to the Unblock package simply to obtain a working authorization flow.
+The preferred feasibility slice is a separate Unblock protected resource alongside the existing authorization service, with only the eight current worker operations. Confirm an extension point and deployment authority before changing the shared service. Preserve the existing Fulcra resource and its clients. Do not add all personal-data tools to the Unblock package simply to obtain a working authorization flow.
 
 That slice must establish:
 
