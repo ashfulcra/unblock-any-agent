@@ -5,9 +5,9 @@ from pathlib import Path
 import shutil
 
 SOURCE=Path(__file__).resolve().parents[1]
-VERSION='0.4.0'
+VERSION='0.5.0'
 REPOSITORY='https://github.com/ashfulcra/unblock-any-agent'
-RUNTIME=('__init__.py','__main__.py','client.py','server.py','store.py','listener.py','claude_route.py','mcp_bridge.py','native_client.py','native_mcp.py','native_listener.py','native_worker.py')
+RUNTIME=('__init__.py','__main__.py','client.py','server.py','store.py','listener.py','claude_route.py','mcp_bridge.py','native_client.py','native_mcp.py','native_listener.py','native_worker.py','native_monitor.py')
 SKILL=('SKILL.md','references/setup.md')
 
 
@@ -52,11 +52,11 @@ def build(output):
 
 Canonical source, shared skills, contributions and stars: {REPOSITORY}
 
-This self-contained {platform} export includes the `unblock` skill and agent-bound stdio MCP bridge. It needs Python 3.13+, `uv`, an enrolled native pilot or running loopback proof service, and `UNBLOCK_AGENT_CONFIG` set to the absolute path of the enrolled agent's private 0600 config. Keep that file outside the plugin. `uv` resolves the pinned MCP SDK when starting the bridge; the first run needs package-network access. The agent config selects its authorized identity, source and transport; tools cannot enroll an owner or choose another sender.
+This self-contained {platform} export includes the `unblock` skill and agent-bound stdio MCP bridge. It needs Python 3.13+, `uv`, an enrolled native pilot or running loopback proof service, and `UNBLOCK_AGENT_CONFIG` explicitly configured in the host MCP server environment as the absolute path of the enrolled agent's private 0600 config. Keep that file outside the plugin. `uv` resolves the pinned MCP SDK when starting the bridge; the first run needs package-network access. A shell-process export does not configure an app-managed plugin automatically. Keep personal host environment settings outside this canonical source. The agent config selects its authorized identity, source and transport; tools cannot enroll an owner or choose another sender.
 
 Read `skills/unblock/references/setup.md` for setup, CLI fallback and listener requirements. The runtime is included. Native profiles use `python3 -m unblock.native_client`; the separate loopback proof uses `python3 -m unblock`. On Claude Code, load this directory with `--plugin-dir`; the standard skill is namespaced as `/unblock:unblock`. No bare `/unblock` registration or namespace reservation is claimed. Test actual tool discovery and a harmless recovery call in your host.
 
-This package does not install a persistent listener, connect ChatGPT web, implement remote OAuth or prove marketplace eligibility. The stdio MCP bridge ends with its host session; configure a separate environment listener or supported scheduled check for later answers. Public submission requires the remaining remote-host authentication, installation, listing and license decisions documented in the canonical repository. No project license has been selected for public distribution.
+This package does not install a persistent listener, connect ChatGPT web, implement remote OAuth or prove marketplace eligibility. The stdio MCP bridge ends with its host session; configure a separate environment listener or supported scheduled check for later answers. Native expected-update checks use the separate `python3 -m unblock.native_monitor` process; it records concerns and executes no agent commands. Public submission requires the remaining remote-host authentication, installation, listing and license decisions documented in the canonical repository. No project license has been selected for public distribution.
 ''')
         if platform=='claude':
             with (root/'README.md').open('a') as readme:

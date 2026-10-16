@@ -45,6 +45,13 @@ class NativeClientTests(unittest.TestCase):
         with self.assertRaises(ValueError):client.call('attention?url=https://foreign.invalid')
         with self.assertRaises(ValueError):client.call('recover',{'request_id':'not-a-uuid'})
 
+    def test_expectation_operations_preserve_exact_body_and_private_authorization(self):
+        for operation in ('work_update','observe_due'):
+            body={'intent_id':'stable','expectation_id':'fixed','revision':'reviewed'}
+            result=self.client.call(operation,body)
+            self.assertEqual(result['visibility'],'pending')
+            self.assertEqual(self.seen[-1],('/api/unblock/'+operation,'Bearer narrow-fixture-token',body))
+
     def test_oversized_receipt_is_a_definite_rejection_before_network(self):
         with self.assertRaises(DomainError) as error:self.client.call('delivery',{'answers':['answer']*10000})
         self.assertEqual(error.exception.status,413);self.assertEqual(error.exception.code,'native_operation_rejected');self.assertEqual(self.seen,[])

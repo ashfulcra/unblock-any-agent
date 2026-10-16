@@ -26,7 +26,7 @@ def build_server(config):
     if not Path(config).is_absolute():raise ValueError('Native config must be an absolute private file path')
     client=NativeClient.from_file(config)
     if client.call('identity')['kind']!='agent':raise ValueError('A worker agent credential is required; listener credentials are read-only')
-    server=MCPServer('unblock',version='0.4.0',instructions='This profile uses native Fulcra persistence. Recover current work before making requests or acting. Native writes may return pending: verify the exact record in recovery before claiming visibility. Question revision and complete answer IDs must be those actually reviewed; stale progress remains historical. Reconcile known actions before repeating them. Credentials expire with the originating session; renewal requires a separately configured trusted owner operator or owner reconnection. This MCP process does not start or acquire owner authentication. A separate environment listener or host tick is required after this MCP session ends.',log_level='ERROR')
+    server=MCPServer('unblock',version='0.5.0',instructions='This profile uses native Fulcra persistence. Recover current work before making requests or acting. Native writes may return pending: verify the exact record in recovery before claiming visibility. Question revision and complete answer IDs must be those actually reviewed; stale progress remains historical. Reconcile known actions before repeating them. Credentials expire with the originating session; renewal requires a separately configured trusted owner operator or owner reconnection. This MCP process does not start or acquire owner authentication. A separate environment listener or host tick is required after this MCP session ends.',log_level='ERROR')
     read=ToolAnnotations(read_only_hint=True,destructive_hint=False,open_world_hint=False)
     write=ToolAnnotations(read_only_hint=False,destructive_hint=False,open_world_hint=False)
 
@@ -43,8 +43,14 @@ def build_server(config):
 
     @server.tool(annotations=read)
     def recover_work()->dict[str,Any]:
-        """Read all of this agent's native requests, current/historical answers, corrected context, action/settlement evidence and observed progress. A failed source remains unknown."""
+        """Read owned requests, answers, corrected context, action evidence, expected updates and missed-update investigations. A failed source remains unknown."""
         return call('attention')
+
+    @server.tool(annotations=write)
+    def record_work_update(key:str,summary:str,context:str,evidence:str,next_action:str,parent_revisions:list[str],status:Literal['working','completed','cancelled'],next_update_at:int|None,request_id:str|None=None)->dict[str,Any]:
+        """Declare or update expected work without inventing a human need. Working needs a future Unix-second deadline; terminal states need null. Review explicit current parent revisions and retain conflicts. Completion closes this expectation only, never a linked question or uncertain action. Independent detection needs a separate scoped monitor."""
+        payload={'work_key':key,'summary':summary,'context':context,'evidence':evidence,'next_action':next_action,'parents':sorted(reference(r) for r in parent_revisions),'status':status,'next_update_at':next_update_at,'request_id':reference(request_id) if request_id is not None else None}
+        return call('work_update',{'intent_id':intent('work-update',payload),**payload})
 
     @server.tool(annotations=read)
     def get_work(request_id:str)->dict[str,Any]:

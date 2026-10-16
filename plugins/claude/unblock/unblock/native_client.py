@@ -12,7 +12,7 @@ from .client import private_read
 from .store import DomainError
 
 READ=('identity','enrollment','attention','recover')
-WRITE=('request','progress','action','settle','delivery')
+WRITE=('request','progress','action','settle','delivery','work_update','observe_due')
 
 
 class NativeClient:

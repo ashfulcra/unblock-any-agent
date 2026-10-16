@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 import { canonicalRecord, projectEvents, readEvents, stableId, sealAgent, openAgent, authorizeAgent, enrollmentRecord, grantScope } from './unblock-core.js';
+import {projectExpectations} from './unblock-expectations.js';
 
 export class NativeSourceError extends Error {
   constructor() {super('Fulcra source unavailable');this.name='NativeSourceError';}
@@ -51,6 +52,11 @@ export function createService(config) {
     if (typeof b[field] !== 'string' || !b[field].trim() || b[field].length>max) throw new Error('Invalid '+field);
     return b[field];
   }
+  /** @param {any} value */
+  function reference(value) {
+    if(typeof value!=='string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value))throw new Error('Invalid expectation reference');
+    return value.toLowerCase();
+  }
   /** @param {any} rows */
   const view = rows => projectEvents(rows);
   return {
@@ -65,11 +71,12 @@ export function createService(config) {
       const user=await upstream(token,'user/v1alpha1/info');
       if (user.userid !== config.ownerId) throw new Error('Account is not the pilot owner');
       const rows=await load(token);
-      /** @type {any[]} */ let events,requests;
-      try {events=readEvents(rows);requests=view(rows);} catch {throw new Error('Native source unavailable or invalid');}
+      /** @type {any[]} */ let events,requests,expectations;
+      try {events=readEvents(rows);requests=view(rows);expectations=projectExpectations(rows,now());} catch {throw new Error('Native source unavailable or invalid');}
       if (agent) authorizeAgent(grant,events,user.userid,now());
       const principal=agent?{kind:grant.kind || 'agent',id:grant.agent_id,environment:grant.environment || 'pilot',agent_ids:grant.agent_ids || [grant.agent_id]}:{kind:'owner',id:user.userid};
       const allowed=(/** @type {any} */ r)=>!agent || (principal.kind==='listener'?principal.agent_ids.includes(r.agent_id):r.agent_id===grant.agent_id);
+      const allowedExpectation=(/** @type {any} */ r)=>allowed(r) && (principal.kind!=='listener' || r.environment===principal.environment);
       if (operation==='identity') return principal;
       if (operation==='enrollment') {
         if (!agent) throw new Error('Enrolled connection required');
@@ -77,7 +84,41 @@ export function createService(config) {
       }
       if (['attention','recover'].includes(operation)) {
         if (body.request_id && !requests.some(r=>r.id===body.request_id && allowed(r))) throw new Error('Request not permitted');
-        return {principal,requests:requests.filter(r=>allowed(r) && (!body.request_id || r.id===body.request_id)),grants:agent?[]:events.filter(e=>e.kind==='enroll').map(e=>{let revoked=false;try{enrollmentRecord(e.payload.grant_id,events);}catch{revoked=true;}return {record_id:e.id,agent_id:e.agent_id,intent_id:e.intent_id,...e.payload,revoked};}),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
+        return {principal,requests:requests.filter(r=>allowed(r) && (!body.request_id || r.id===body.request_id)),expectations:expectations.filter(r=>allowedExpectation(r) && (!body.request_id || r.request_id===body.request_id)),grants:agent?[]:events.filter(e=>e.kind==='enroll').map(e=>{let revoked=false;try{enrollmentRecord(e.payload.grant_id,events);}catch{revoked=true;}return {record_id:e.id,agent_id:e.agent_id,intent_id:e.intent_id,...e.payload,revoked};}),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
+      }
+      if(operation==='work_update') {
+        if(principal.kind!=='agent')throw new Error('Enrolled worker required');
+        const work_key=text(body,'work_key',160),legacy_id=stableId(grant.agent_id+':expectation:'+work_key);
+        const legacy=expectations.find(r=>r.id===legacy_id && r.agent_id===grant.agent_id && r.environment===principal.environment);
+        // Keep already-published pilot identities; new work is collision-safe before readback.
+        const expectation_id=legacy?.id || stableId(JSON.stringify(['expectation/2',grant.agent_id,principal.environment,work_key]));
+        const existing=expectations.find(r=>r.id===expectation_id);
+        const parents=body.parents;
+        if(!Array.isArray(parents) || parents.length>10)throw new Error('Explicit expectation parents required');
+        const reviewed=parents.map(reference).sort();
+        if(new Set(reviewed).size!==reviewed.length || (reviewed.length && (!existing || reviewed.some(p=>!existing.history.some((/** @type {any} */ e)=>e.id===p)))))throw new Error('Unknown or duplicate expectation parent');
+        const request_id=body.request_id==null?null:reference(body.request_id);
+        if(request_id && !requests.some(r=>r.id===request_id && r.agent_id===grant.agent_id))throw new Error('Linked request not permitted');
+        if(existing && (existing.request_id!==request_id || existing.environment!==principal.environment))throw new Error('Expectation request or environment binding changed');
+        const payload={work_key,summary:text(body,'summary'),context:text(body,'context',16000),evidence:text(body,'evidence',16000),next_action:text(body,'next_action'),parents:reviewed,status:text(body,'status',20),next_update_at:body.next_update_at,request_id,environment:principal.environment};
+        const event={schema:'unblock/1',intent_id:text(body,'intent_id',160),kind:'work_update',expectation_id,agent_id:grant.agent_id,payload};
+        const retry=canonicalRecord(event);
+        if(rows.some(r=>r.id===retry.id && r.note===retry.note))return {record_id:retry.id,expectation_id,visibility:'visible'};
+        if(!['working','completed','cancelled'].includes(payload.status))throw new Error('Invalid expectation status');
+        if(payload.status==='working') {
+          if(!Number.isInteger(payload.next_update_at) || payload.next_update_at<=now() || payload.next_update_at>now()+30*86400)throw new Error('Expected update must be in the next 30 days');
+        } else if(payload.next_update_at!==null)throw new Error('Terminal expectation needs a null deadline');
+        return {...await publish(token,event),expectation_id};
+      }
+      if(operation==='observe_due') {
+        if(!['listener','owner'].includes(principal.kind))throw new Error('Monitor or owner operation required');
+        const expectation_id=reference(body.expectation_id),revision=reference(body.revision);
+        const work=expectations.find(r=>r.id===expectation_id && allowedExpectation(r));
+        if(!work || work.revisions.length!==1 || work.revisions[0].id!==revision || work.revisions[0].payload.status!=='working' || work.revisions[0].payload.next_update_at>now())throw new Error('Current scoped overdue expectation required');
+        const next_update_at=work.revisions[0].payload.next_update_at;
+        const payload={revision,next_update_at,observer:principal.id,observer_kind:principal.kind,environment:work.environment,condition:'expected_update_missing'};
+        const event={schema:'unblock/1',intent_id:stableId('overdue:'+expectation_id+':'+revision+':'+principal.id),kind:'overdue',expectation_id,agent_id:work.agent_id,payload};
+        return {...await publish(token,event),expectation_id};
       }
       if (operation==='delivery') {
         if (principal.kind!=='listener') throw new Error('Listener operation required');

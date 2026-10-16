@@ -9,7 +9,7 @@
       "name": "unblock",
       "source": "./plugins/claude/unblock",
       "description": "Request help, recover continuity and verify that an agent continued.",
-      "version": "0.4.0"
+      "version": "0.5.0"
     }
   ],
   "description": "Canonical Unblock Any Agent development source: human help, continuity and verified agent continuation."

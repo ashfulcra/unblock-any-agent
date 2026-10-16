@@ -1,8 +1,11 @@
 <script>
   import { editDraft, reviewDraft, submitDraft, failedAnswer } from '$lib/answer-draft.js';
   import { onMount } from 'svelte';
+  import ExpectationsDashboard from './ExpectationsDashboard.svelte';
   /** @type {any[]} */ let requests=$state([]);
   /** @type {any[]} */ let grants=$state([]);
+  /** @type {any[]} */ let expectations=$state([]);
+  let expectationSourceReady=$state(false),ownerId=$state('');
   let error=$state('');
   let checked=$state('');
   let busy=$state(false);
@@ -24,6 +27,8 @@
       const res=await fetch('/api/unblock/attention');const data=await res.json();
       if(!res.ok)throw new Error(data.error);
       requests=data.requests;grants=data.grants;checked=data.checked_at;error='';
+      expectationSourceReady=Array.isArray(data.expectations);if(expectationSourceReady)expectations=data.expectations;
+      ownerId=data.principal?.kind==='owner'?data.principal.id:'';
       if(pendingEnrollment && grants.some(g=>g.intent_id===pendingEnrollment.intent_id)){pendingEnrollment=null;sessionStorage.removeItem('unblock-enrollment');notice='Enrollment read back. The credential is ready until its displayed expiry.';}
       for(const [id,body] of Object.entries(pending)) {
         const row=requests.find(r=>r.id===id);
@@ -31,8 +36,10 @@
           delete pending[id];delete drafts[id];delete answers[id];sessionStorage.removeItem('unblock-answer:'+id);sessionStorage.removeItem('unblock-draft:'+id);notice='Answer read back. Current agent progress appears on the request card.';
         }
       }
-    } catch(e) {error=(/** @type {Error} */(e)).message;}
+    } catch(e) {error=(/** @type {Error} */(e)).message;expectationSourceReady=false;}
   }
+  /** @param {any} row */
+  function needsHuman(row){return row.revisions.length===1 && row.answers.length===0;}
   /** @param {string} operation @param {any} body */
   async function post(operation,body) {
     const res=await fetch('/api/unblock/'+operation,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -96,9 +103,11 @@
   {#if error}<p role="alert" class="mb-4 rounded border border-red-400 p-3">{error}. Last known work remains below.</p>{/if}
   {#if notice}<p role="status" class="mb-4 rounded border border-fulcra-teal p-3">{notice}</p>{/if}
   {#if checked}<p class="mb-4 text-xs opacity-60">Last successful check: {new Date(checked).toLocaleString()}</p>{/if}
-  {#if checked && !requests.length}<p class="rounded border border-white/20 p-5">No requests found in the checked source. Enroll an agent below to connect its work.</p>{/if}
-  {#each requests as row (row.id)}
-    <article class="mb-5 rounded-xl border border-white/20 bg-white/5 p-5">
+  {#if checked && !error && !requests.some(needsHuman)}<p class="rounded border border-white/20 p-5">No unanswered human questions in the checked source.</p>{/if}
+  {#each [true,false] as humanQuestions}
+  {#if !humanQuestions}<ExpectationsDashboard rows={expectations} {ownerId} sourceReady={expectationSourceReady && !error} {refresh}/>{#if requests.some(r=>!needsHuman(r))}<h2 class="mb-4 text-2xl font-semibold">Answers and work history</h2>{/if}{/if}
+  {#each requests.filter(r=>needsHuman(r)===humanQuestions) as row (row.id)}
+    <article id={'request-'+row.id} class="mb-5 rounded-xl border border-white/20 bg-white/5 p-5">
       <p class="mb-2 text-sm text-fulcra-teal">{grants.find(g=>g.agent_id===row.agent_id)?.name || row.agent_id} · {row.state.replaceAll('_',' ')}</p>
       {#each row.revisions as revision}
         <h2 class="text-xl font-semibold">{revision.payload.need}</h2>
@@ -128,13 +137,14 @@
       {#each row.uncertain_actions as action}<p class="mt-3 rounded border border-amber-400 p-3">Needs verification: {action.payload.effect}</p>{/each}
     </article>
   {/each}
+  {/each}
   <details class="mt-8 rounded-xl border border-white/20 p-5">
     <summary class="cursor-pointer text-lg font-semibold">Connect an agent</summary>
     <p class="mt-3 text-sm">Credentials are limited to the enrolled agent and expire with this sign-in session, within one hour. Renew enrollment when expired. Keep them in the agent's private credential storage.</p>
     <label class="mt-4 block" for="enrollment-kind">Connection role</label>
-    <select id="enrollment-kind" class="select mt-1 w-full bg-black/30 text-white" bind:value={enrollmentKind} disabled={!!pendingEnrollment}><option value="agent">Agent worker</option><option value="listener">Environment listener — read and route only</option></select>
+    <select id="enrollment-kind" class="select mt-1 w-full bg-black/30 text-white" bind:value={enrollmentKind} disabled={!!pendingEnrollment}><option value="agent">Agent worker</option><option value="listener">Environment listener — check and route</option></select>
     <label class="mt-3 block" for="environment">Environment ID</label><input id="environment" class="input mt-1 w-full bg-black/30 text-white" bind:value={environment} disabled={!!pendingEnrollment}/>
-    {#if enrollmentKind==='listener'}<label class="mt-3 block" for="agent-scope">Permitted agent IDs, separated by commas</label><input id="agent-scope" class="input mt-1 w-full bg-black/30 text-white" bind:value={agentScope} disabled={!!pendingEnrollment}/><p class="mt-2 text-sm">The listener can check and route only these agents. Each worker needs its own credential to change work.</p>{/if}
+    {#if enrollmentKind==='listener'}<label class="mt-3 block" for="agent-scope">Permitted agent IDs, separated by commas</label><input id="agent-scope" class="input mt-1 w-full bg-black/30 text-white" bind:value={agentScope} disabled={!!pendingEnrollment}/><p class="mt-2 text-sm">The listener can check these agents and record delivery or overdue observations. It cannot change their work or report their progress. Each worker needs its own credential.</p>{/if}
     <label class="mt-4 block" for="agent-id">Agent or listener ID</label><input id="agent-id" class="input mt-1 w-full bg-black/30 text-white" placeholder="my-agent" bind:value={agentId} disabled={!!pendingEnrollment}/>
     <label class="mt-3 block" for="agent-name">Display name</label><input id="agent-name" class="input mt-1 w-full bg-black/30 text-white" bind:value={agentName} disabled={!!pendingEnrollment}/>
     <button class="btn mt-4" disabled={busy || !agentId || !agentName} onclick={enroll}>{pendingEnrollment?'Retry same enrollment':'Create scoped enrollment'}</button>
