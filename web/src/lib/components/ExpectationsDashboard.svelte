@@ -1,6 +1,7 @@
 <script>
   import {onMount} from 'svelte';
   import {failedAnswer} from '$lib/answer-draft.js';
+  import {checkKey,currentCheck,pendingChecks} from '$lib/unblock-attention.js';
   import ExpectationCard from './ExpectationCard.svelte';
   /** @type {{rows:any[],ownerId:string,sourceReady:boolean,refresh:()=>Promise<void>}} */
   let {rows,ownerId,sourceReady,refresh}=$props();
@@ -16,28 +17,28 @@
   $effect(()=>{
     if(!sourceReady || !ownerId)return;
     for(const [id,body] of Object.entries(pending)) {
-      const row=rows.find(r=>r.id===id);
+      const row=rows.find(r=>r.id===body.expectation_id);
       if(row?.observations.some((/** @type {any} */ o)=>o.payload.revision===body.revision && o.payload.observer===ownerId && o.payload.observer_kind==='owner' && (!body._receipt || o.id===body._receipt))) {
         retain(id,null);notice='Concern read back. This check does not assert agent acknowledgment or resumed work.';
       }
     }
   });
-  /** @param {any} row */
-  async function observe(row) {
-    const body=pending[row.id] || {expectation_id:row.id,revision:row.revisions[0].id};
-    retain(row.id,body);busy=true;error='';notice='';
+  /** @param {any} row @param {any} [original] */
+  async function observe(row,original=null) {
+    const body=original || currentCheck(row,pending),id=checkKey(body);
+    retain(id,body);busy=true;error='';notice='';
     try {
       const res=await fetch('/api/unblock/observe_due',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({expectation_id:body.expectation_id,revision:body.revision})});
       const data=await res.json();
-      if(!res.ok){retain(row.id,failedAnswer(body,data.outcome || 'uncertain'));throw new Error(data.error);}
-      retain(row.id,{...body,_uncertain:true,_receipt:data.record_id});notice='Check accepted; verifying the exact concern in retained history.';await refresh();
-    }catch(e){if(pending[row.id])retain(row.id,failedAnswer(pending[row.id],'uncertain'));error=(/** @type {Error} */(e)).message;}
+      if(!res.ok){retain(id,failedAnswer(body,data.outcome || 'uncertain'));throw new Error(data.error);}
+      retain(id,{...body,_uncertain:true,_receipt:data.record_id});notice='Check accepted; verifying the exact concern in retained history.';await refresh();
+    }catch(e){if(pending[id])retain(id,failedAnswer(pending[id],'uncertain'));error=(/** @type {Error} */(e)).message;}
     finally{busy=false;}
   }
   onMount(()=>{
     for(let i=0;i<sessionStorage.length;i++) {
       const key=sessionStorage.key(i);
-      if(key?.startsWith('unblock-observe:'))try{const body=JSON.parse(sessionStorage.getItem(key)||'null');if(!body?.expectation_id || !body?.revision)throw new Error('Invalid retained check');pending[body.expectation_id]=body;}catch{error='A saved check could not be read. Keep its browser storage and reconcile the original revision before retrying.';}
+      if(key?.startsWith('unblock-observe:'))try{const body=JSON.parse(sessionStorage.getItem(key)||'null');if(!body?.expectation_id || !body?.revision)throw new Error('Invalid retained check');const id=checkKey(body);pending[id]=body;if(key!=='unblock-observe:'+id){sessionStorage.setItem('unblock-observe:'+id,JSON.stringify(body));sessionStorage.removeItem(key);i--;}}catch{error='A saved check could not be read. Keep its browser storage and reconcile the original revision before retrying.';}
     }
   });
 </script>
@@ -50,6 +51,6 @@
   {#if error}<p role="alert" class="mt-3">{error}. Earlier uncertain checks remain pending.</p>{/if}
   {#if notice}<p role="status" class="mt-3">{notice}</p>{/if}
   {#if sourceReady && !active.length}<p class="mt-3">No current missed-update investigations in the checked source.</p>{/if}
-  {#each active as row (row.id)}<ExpectationCard {row} {busy} pending={!!pending[row.id]} allowCheck={sourceReady} oncheck={observe}/>{/each}
-  {#if other.length}<details class="mt-4"><summary class="cursor-pointer">Other declared work and history ({other.length})</summary>{#each other as row (row.id)}<ExpectationCard {row} {busy} pending={!!pending[row.id]} allowCheck={sourceReady} oncheck={observe}/>{/each}</details>{/if}
+  {#each active as row (row.id)}<ExpectationCard {row} {busy} pending={pendingChecks(row,pending)} allowCheck={sourceReady} oncheck={observe}/>{/each}
+  {#if other.length}<details class="mt-4"><summary class="cursor-pointer">Other declared work and history ({other.length})</summary>{#each other as row (row.id)}<ExpectationCard {row} {busy} pending={pendingChecks(row,pending)} allowCheck={sourceReady} oncheck={observe}/>{/each}</details>{/if}
 </section>

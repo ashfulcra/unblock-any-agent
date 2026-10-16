@@ -1,4 +1,5 @@
 <script>
+  import {needsHuman} from '$lib/unblock-attention.js';
   import { editDraft, reviewDraft, submitDraft, failedAnswer } from '$lib/answer-draft.js';
   import { onMount } from 'svelte';
   import ExpectationsDashboard from './ExpectationsDashboard.svelte';
@@ -38,8 +39,6 @@
       }
     } catch(e) {error=(/** @type {Error} */(e)).message;expectationSourceReady=false;}
   }
-  /** @param {any} row */
-  function needsHuman(row){return row.revisions.length===1 && row.answers.length===0;}
   /** @param {string} operation @param {any} body */
   async function post(operation,body) {
     const res=await fetch('/api/unblock/'+operation,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

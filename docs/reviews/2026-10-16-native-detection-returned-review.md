@@ -1,0 +1,14 @@
+# Returned PR9 review corrections
+
+The separate automated review returned four findings after PR9 merged. They were noticed without a human check prompt, preserved as an owned V5 task, reproduced, and corrected in one batch on a new follow-up branch. The original fresh review and its one fix pass remain unchanged. The first M2-3 harness run was left incomplete; attempt2 retains the same acceptance criteria.
+
+- **Old manual checks block new revisions:** pending browser entries now use expectation+revision, migrate old entries, keep original retries separate and allow the current due revision to be checked independently. Live test created an uncertain check in0.5.0, upgraded to0.5.1, changed the worker revision and reloaded. Both the old retry and new check remained visible. The new owner observation was read back while the old check remained retained; a stale old retry did not remove it.
+- **Overlapping monitor snapshots forget work:** revalidate known expectation IDs inside the same SQLite transaction that replaces the snapshot. A deterministic two-thread fixture reproduces the old loss; the fixed older tick becomes unknown and retains both known expectations.
+- **Concurrent initial links select the first source row:** projection exposes all retained question associations and current link conflicts. Exact accepted retries are recognized before mutable link validation. Reconciliation must review every current head and choose an already-known link, including null. Live concurrent first declarations retained two links; both exact receipts were retried successfully, then explicit reconciliation retained all history and both associated questions.
+- **Unanswered revision conflicts appear historical:** conflicting questions stay in Needs you. The deployed browser showed the unanswered conflict before Investigate and did not claim all questions were answered.
+
+Validation:92Python tests,51web tests, zero-error web check with2inherited authentication-component warnings, build and independent-process smoke. Strict Claude/portable schemas passed; both actual0.5.1 manifest commands exposed8tools with native checked recovery from a fresh dependency cache. Both generated exports match canonical source. The synthetic questions/expectations were reconciled and completed separately, and the dedicated probe grant was revoked with source readback and later401denial. No external effect was performed.
+
+The private QA proxy deliberately returned one uncertain response before forwarding, so the old synthetic check has no ingested observation. Its exact retained body and the fault evidence are preserved privately. This is test evidence, not permission to discard an uncertain real receipt.
+
+Limits remain: bounded check-only monitor, no persistent-health or general automatic-investigation claim, no ChatGPT web/event or official marketplace acceptance, no second-account deployment claim. FullM3 remains incomplete.

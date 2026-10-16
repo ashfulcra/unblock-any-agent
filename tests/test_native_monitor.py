@@ -143,6 +143,25 @@ class NativeMonitorTests(unittest.TestCase):
         before=copy.deepcopy(client.calls);NativeMonitor(client,'here',self.state).tick()
         self.assertTrue(all(c in before for c in client.calls[len(before):]))
 
+    def test_overlapping_older_snapshot_cannot_forget_newly_known_work(self):
+        self.monitor().tick();original=self.client.call;two=False;arrived=threading.Event();release=threading.Event()
+        def call(op,data=None):
+            result=original(op,data)
+            if op=='attention' and two:
+                second=copy.deepcopy(result['expectations'][0]);second['id']='55555555-5555-4555-a555-555555555555';result['expectations'].append(second)
+            return result
+        self.client.call=call
+        class OlderMonitor(NativeMonitor):
+            def _reconcile(inner,rows,me):
+                arrived.set()
+                if not release.wait(5):raise AssertionError('Newer snapshot missing')
+                return super()._reconcile(rows,me)
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            old=pool.submit(OlderMonitor(self.client,'here',self.state).tick);self.assertTrue(arrived.wait(5));two=True
+            self.assertEqual(self.monitor().tick()['pending_known'],2);two=False;release.set();result=old.result(timeout=8)
+        self.assertFalse(result['checked']);self.assertEqual(result['pending_known'],2)
+        self.assertFalse(self.monitor().tick()['checked'])
+
     def test_revocation_foreign_source_and_rebinding_never_erase_known_work(self):
         self.monitor().tick();self.client.fail=True;self.client.status=401
         result=self.monitor().tick();self.assertFalse(result['checked']);self.assertEqual(result['pending_known'],1)

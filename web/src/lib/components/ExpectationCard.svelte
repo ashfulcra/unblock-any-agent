@@ -1,5 +1,5 @@
 <script>
-  /** @type {{row:any,busy:boolean,pending:boolean,allowCheck:boolean,oncheck:(row:any)=>Promise<void>}} */
+  /** @type {{row:any,busy:boolean,pending:any[],allowCheck:boolean,oncheck:(row:any,original?:any)=>Promise<void>}} */
   let {row,busy,pending,allowCheck,oncheck}=$props();
 </script>
 
@@ -15,11 +15,15 @@
   {#if row.state==='conflict'}<p class="mt-3">Concurrent updates need agent reconciliation. No deadline was silently chosen.</p>
   {:else if row.state==='investigate'}<p class="mt-3">A missed update was recorded. Its cause is unknown. This concern is available when the agent checks its work; automatic follow-up has not been verified.</p>
   {:else if row.state==='due'}<p class="mt-3">The declared update is overdue. No persisted check is visible yet.</p>{/if}
-  {#if row.request_id}<a class="mt-3 block text-sm underline" href={'#request-'+row.request_id}>Related human question — its answers and verification remain separate</a>{/if}
-  {#if pending || ['due','investigate'].includes(row.state)}
-    <button class="btn btn-sm mt-3" disabled={busy || !allowCheck} onclick={()=>oncheck(row)}>{pending?'Retry original pending check':'Check this update'}</button>
+  {#if row.link_conflict}<p class="mt-3">Conflicting linked questions need explicit agent reconciliation. Every question remains separately pending.</p>{/if}
+  {#each row.request_ids || (row.request_id?[row.request_id]:[]) as id}<a class="mt-3 block text-sm underline" href={'#request-'+id}>{id===row.request_id?'Related human question':'Retained linked human question'} — its answers and verification remain separate</a>{/each}
+  {#if ['due','investigate'].includes(row.state)}
+    <button class="btn btn-sm mt-3" disabled={busy || !allowCheck} onclick={()=>oncheck(row)}>{pending.some(p=>p.revision===row.revisions[0].id)?'Retry current pending check':'Check this update'}</button>
   {/if}
-  {#if pending}<p class="mt-2 text-sm">Check pending readback. Its original revision is retained, including if the work changes.</p>{/if}
+  {#each pending as body}
+    <p class="mt-2 text-sm">Check pending readback for revision {body.revision}. Its original receipt remains retained.</p>
+    {#if row.revisions.length!==1 || body.revision!==row.revisions[0].id || !['due','investigate'].includes(row.state)}<button class="btn btn-sm mt-2" disabled={busy || !allowCheck} onclick={()=>oncheck(row,body)}>Retry original pending check</button>{/if}
+  {/each}
   <details class="mt-3 text-sm">
     <summary class="cursor-pointer">Retained update and concern history</summary>
     {#each row.history as update}<p class="mt-2"><strong>{update.payload.status}:</strong> {update.payload.evidence}</p>{/each}

@@ -14,10 +14,12 @@ export function projectExpectations(records,now) {
   const revisions=history.filter((/** @type {any} */ e)=>!superseded.has(e.id));
   if(!revisions.length)throw new Error('Invalid expectation revision graph');
   const current=revisions.length===1?revisions[0]:null;
+  const links=[...new Set(revisions.map((/** @type {any} */ e)=>e.payload.request_id))];
+  const request_ids=[...new Set(history.map((/** @type {any} */ e)=>e.payload.request_id).filter(Boolean))].sort();
   const observations=rows.filter((/** @type {any} */ e)=>e.kind==='overdue');
   const current_observations=observations.filter((/** @type {any} */ e)=>current?.payload.status==='working' && e.payload.revision===current.id && e.payload.next_update_at===current.payload.next_update_at);
   let state=current?.payload.status || 'conflict';
   if(state==='working' && current.payload.next_update_at<=now)state=current_observations.length?'investigate':'due';
-  return {id,agent_id:history[0].agent_id,environment:history[0].payload.environment,request_id:history[0].payload.request_id,history,revisions,observations,current_observations,state};
+  return {id,agent_id:history[0].agent_id,environment:history[0].payload.environment,request_id:links.length===1?links[0]:null,request_ids,link_conflict:links.length>1,history,revisions,observations,current_observations,state};
  });
 }
