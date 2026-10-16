@@ -20,7 +20,7 @@ function fixture(expires=2000) {
    if(path==='/ingest/v1/record/MomentAnnotation') {const row=JSON.parse(options.body);if(!accepted.some(x=>x.id===row.id))accepted.push(row);if(failAfterWrite)offline=true;return Response.json({upload_id:'accepted'},{status:201});}
    throw Error('Unexpected upstream path '+path);
  }});
- return {service,token,failAfterWrite:()=>{failAfterWrite=true},advance:(/** @type {number} */ seconds)=>{clock+=seconds},publish:()=>{visible=[...accepted]},fail:()=>{offline=true}};
+ return {service,token,corrupt:(/** @type {string} */ note)=>{visible=[{id:"bad",note}]},failAfterWrite:()=>{failAfterWrite=true},advance:(/** @type {number} */ seconds)=>{clock+=seconds},publish:()=>{visible=[...accepted]},fail:()=>{offline=true}};
 }
 const need={intent_id:'i1',need_key:'color',need:'Choose color',context:'Page work',recommendation:'Blue',next_action:'Apply color',parents:[]};
 
@@ -88,4 +88,48 @@ test('recorded progress retries remain historical after answers or question revi
 test('a lost readback after ingestion is an uncertain write rather than a definite rejection',async()=>{
  const f=fixture();const e=await f.service.handle('enroll',{cookieToken:f.token,body:{intent_id:'a',agent_id:'alpha',name:'Alpha'}});f.publish();f.failAfterWrite();
  await assert.rejects(()=>f.service.handle('request',{token:e.credential,body:need}),(/** @type {any} */ error)=>error.publication_uncertain===true);
+});
+
+test('listener identity is environment-scoped and can only read its explicit agent set',async()=>{
+ const f=fixture();const owner=(/** @type {string} */ op,/** @type {any} */ body)=>f.service.handle(op,{cookieToken:f.token,body});
+ const alpha=await owner('enroll',{intent_id:'alpha',agent_id:'alpha',name:'Alpha'});f.publish();
+ const beta=await owner('enroll',{intent_id:'beta',agent_id:'beta',name:'Beta'});f.publish();
+ const a=await f.service.handle('request',{token:alpha.credential,body:need});f.publish();
+ const b=await f.service.handle('request',{token:beta.credential,body:{...need,intent_id:'other'}});f.publish();
+ const listener=await owner('enroll',{intent_id:'listener',agent_id:'local-listener',name:'Local listener',kind:'listener',environment:'machine-one',agent_ids:['alpha']});f.publish();
+ const call=(/** @type {string} */ op,/** @type {any} */ body={})=>f.service.handle(op,{token:listener.credential,body});
+ const who=await call('identity');assert.equal(who.kind,'listener');assert.equal(who.environment,'machine-one');assert.deepEqual(who.agent_ids,['alpha']);
+ const attention=await call('attention');assert.equal(attention.requests.length,1);assert.equal(attention.requests[0].id,a.request_id);assert.equal(attention.principal.kind,'listener');
+ await assert.rejects(()=>call('recover',{request_id:b.request_id}));
+ for(const op of ['request','progress','answer','action','settle','enroll','revoke'])await assert.rejects(()=>call(op,{...need,intent_id:'forbidden',request_id:a.request_id}),/Listener/);
+ await owner('revoke',{intent_id:'revoke-listener',grant_id:listener.grant_id});f.publish();await assert.rejects(()=>call('identity'));
+});
+
+test('listener delivery receipts are scoped observations and never become agent progress',async()=>{
+ const f=fixture();const owner=(/** @type {string} */ op,/** @type {any} */ body)=>f.service.handle(op,{cookieToken:f.token,body});
+ const alpha=await owner('enroll',{intent_id:'a',agent_id:'alpha',name:'Alpha'});f.publish();
+ const request=await f.service.handle('request',{token:alpha.credential,body:need});f.publish();
+ const listener=await owner('enroll',{intent_id:'l',agent_id:'listener',name:'Listener',kind:'listener',environment:'env',agent_ids:['alpha']});f.publish();
+ const body={intent_id:'delivery-attempt',request_id:request.request_id,revision:request.record_id,answers:[],disposition:'queued',evidence:'Trusted local launcher returned zero; no agent progress asserted'};
+ await f.service.handle('delivery',{token:listener.credential,body});f.publish();
+ const work=(await owner('attention',{})).requests[0];assert.equal(work.state,'needs_you');assert.equal(work.progress.length,0);assert.equal(work.deliveries[0].payload.receiver,'listener');assert.equal(work.deliveries[0].payload.environment,'env');
+ await assert.rejects(()=>f.service.handle('delivery',{token:alpha.credential,body}));
+ await assert.rejects(()=>f.service.handle('delivery',{token:listener.credential,body:{...body,request_id:'foreign'}}));
+});
+
+test('malformed native source is sanitized as unavailable rather than user input rejection',async()=>{
+ const f=fixture();f.corrupt('private-source-fragment');
+ await assert.rejects(()=>f.service.handle('attention',{cookieToken:f.token}),error=>error instanceof Error && error.message.includes('unavailable') && !error.message.includes('private-source-fragment'));
+});
+
+test('delivery supports a complete retained answer set beyond one hundred',async()=>{
+ const f=fixture(),owner=(/** @type {string} */ op,/** @type {any} */ body)=>f.service.handle(op,{cookieToken:f.token,body});
+ const a=await owner('enroll',{intent_id:'agent-large-set',agent_id:'alpha',name:'Alpha'});f.publish();
+ const request=await f.service.handle('request',{token:a.credential,body:need});f.publish();
+ for(let i=0;i<101;i++)await owner('answer',{intent_id:'answer-'+i,request_id:request.request_id,revision:request.record_id,answer:'Retained decision '+i});
+ f.publish();
+ const listener=await owner('enroll',{intent_id:'listener-large-set',agent_id:'listener',name:'Listener',kind:'listener',environment:'env',agent_ids:['alpha']});f.publish();
+ const work=(await owner('attention',{})).requests[0];assert.equal(work.answers.length,101);
+ await f.service.handle('delivery',{token:listener.credential,body:{intent_id:'large-set-delivery',request_id:request.request_id,revision:request.record_id,answers:work.answers.map((/** @type {any} */ a)=>a.id),disposition:'queued',evidence:'Route observation only'}});f.publish();
+ const observed=(await owner('attention',{})).requests[0];assert.equal(observed.deliveries.length,1);assert.equal(observed.progress.length,0);
 });

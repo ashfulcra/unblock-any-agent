@@ -8,6 +8,9 @@
   let busy=$state(false);
   let agentId=$state('');
   let agentName=$state('');
+  let enrollmentKind=$state('agent');
+  let environment=$state('pilot');
+  let agentScope=$state('');
   let credential=$state('');
   let expires=$state('');
   let notice=$state('');
@@ -40,7 +43,7 @@
     try {
       if(!pendingEnrollment){
         const response=await fetch('/api/unblock/prepare_enrollment');const prepared=await response.json();if(!response.ok)throw new Error(prepared.error);
-        pendingEnrollment={intent_id:crypto.randomUUID(),agent_id:agentId,name:agentName,expires_at:prepared.expires_at};sessionStorage.setItem('unblock-enrollment',JSON.stringify(pendingEnrollment));
+        pendingEnrollment={intent_id:crypto.randomUUID(),agent_id:agentId,name:agentName,kind:enrollmentKind,environment,agent_ids:agentScope.split(',').map(s=>s.trim()).filter(Boolean),expires_at:prepared.expires_at};sessionStorage.setItem('unblock-enrollment',JSON.stringify(pendingEnrollment));
       }
       const data=await post('enroll',pendingEnrollment);
       if(pendingEnrollment){pendingEnrollment=failedAnswer(pendingEnrollment,'uncertain');sessionStorage.setItem('unblock-enrollment',JSON.stringify(pendingEnrollment));}
@@ -74,7 +77,7 @@
     catch(e){error=(/** @type {Error} */(e)).message;}finally{busy=false;}
   }
   onMount(()=>{
-    try{pendingEnrollment=JSON.parse(sessionStorage.getItem('unblock-enrollment')||'null');if(pendingEnrollment){agentId=pendingEnrollment.agent_id;agentName=pendingEnrollment.name;}}catch{}
+    try{pendingEnrollment=JSON.parse(sessionStorage.getItem('unblock-enrollment')||'null');if(pendingEnrollment){agentId=pendingEnrollment.agent_id;agentName=pendingEnrollment.name;enrollmentKind=pendingEnrollment.kind || 'agent';environment=pendingEnrollment.environment || 'pilot';agentScope=(pendingEnrollment.agent_ids || []).join(',');}}catch{}
     for(let i=0;i<sessionStorage.length;i++) {
       const k=sessionStorage.key(i);
       if(k?.startsWith('unblock-draft:'))try{const body=JSON.parse(sessionStorage.getItem(k)||'null');if(body?.request_id){drafts[body.request_id]=body;answers[body.request_id]=body.answer;}}catch{}
@@ -121,21 +124,26 @@
       {/if}
       {#if row.stale_answers.length}<p class="mt-3 text-sm">{row.stale_answers.length} historical answer(s) belong to an earlier question and remain retained.</p>{/if}
       {#each row.progress as p}<p class="mt-3 text-sm"><strong>{p.payload.stage}:</strong> {p.payload.evidence}</p>{/each}
+      {#each row.deliveries || [] as d}<p class="mt-3 text-sm"><strong>Route report: {d.payload.disposition}.</strong> {d.payload.evidence}</p>{/each}
       {#each row.uncertain_actions as action}<p class="mt-3 rounded border border-amber-400 p-3">Needs verification: {action.payload.effect}</p>{/each}
     </article>
   {/each}
   <details class="mt-8 rounded-xl border border-white/20 p-5">
     <summary class="cursor-pointer text-lg font-semibold">Connect an agent</summary>
     <p class="mt-3 text-sm">Credentials are limited to the enrolled agent and expire with this sign-in session, within one hour. Renew enrollment when expired. Keep them in the agent's private credential storage.</p>
-    <label class="mt-4 block" for="agent-id">Agent ID</label><input id="agent-id" class="input mt-1 w-full bg-black/30 text-white" placeholder="my-agent" bind:value={agentId} disabled={!!pendingEnrollment}/>
+    <label class="mt-4 block" for="enrollment-kind">Connection role</label>
+    <select id="enrollment-kind" class="select mt-1 w-full bg-black/30 text-white" bind:value={enrollmentKind} disabled={!!pendingEnrollment}><option value="agent">Agent worker</option><option value="listener">Environment listener — read and route only</option></select>
+    <label class="mt-3 block" for="environment">Environment ID</label><input id="environment" class="input mt-1 w-full bg-black/30 text-white" bind:value={environment} disabled={!!pendingEnrollment}/>
+    {#if enrollmentKind==='listener'}<label class="mt-3 block" for="agent-scope">Permitted agent IDs, separated by commas</label><input id="agent-scope" class="input mt-1 w-full bg-black/30 text-white" bind:value={agentScope} disabled={!!pendingEnrollment}/><p class="mt-2 text-sm">The listener can check and route only these agents. Each worker needs its own credential to change work.</p>{/if}
+    <label class="mt-4 block" for="agent-id">Agent or listener ID</label><input id="agent-id" class="input mt-1 w-full bg-black/30 text-white" placeholder="my-agent" bind:value={agentId} disabled={!!pendingEnrollment}/>
     <label class="mt-3 block" for="agent-name">Display name</label><input id="agent-name" class="input mt-1 w-full bg-black/30 text-white" bind:value={agentName} disabled={!!pendingEnrollment}/>
-    <button class="btn mt-4" disabled={busy || !agentId || !agentName} onclick={enroll}>{pendingEnrollment?'Retry same enrollment':'Enroll agent'}</button>
+    <button class="btn mt-4" disabled={busy || !agentId || !agentName} onclick={enroll}>{pendingEnrollment?'Retry same enrollment':'Create scoped enrollment'}</button>
     {#if credential}
       <label class="mt-4 block" for="agent-credential">Private agent credential · expires {expires}</label>
       <textarea id="agent-credential" class="textarea mt-2 w-full bg-black/30 text-white" readonly value={credential} rows="3"></textarea>
       <button class="btn btn-sm mt-2" onclick={()=>{credential='';}}>Hide credential</button>
     {/if}
-    <ul class="mt-4 space-y-2">{#each grants as grant (grant.record_id)}<li>{grant.name} · {grant.revoked?'revoked':new Date(grant.expires_at*1000).getTime()<Date.now()?'expired':'enrolled'} {#if !grant.revoked}<button class="btn btn-xs ml-2" disabled={busy} onclick={()=>revoke(grant)}>Revoke</button>{/if}</li>{/each}</ul>
+    <ul class="mt-4 space-y-2">{#each grants as grant (grant.record_id)}<li>{grant.name} · {grant.kind || 'agent'} · {grant.environment || 'pilot'} · {grant.revoked?'revoked':new Date(grant.expires_at*1000).getTime()<Date.now()?'expired':'enrolled'} {#if !grant.revoked}<button class="btn btn-xs ml-2" disabled={busy} onclick={()=>revoke(grant)}>Revoke</button>{/if}</li>{/each}</ul>
   </details>
   <p class="mt-6 text-sm"><a class="underline" href="https://github.com/ashfulcra/unblock-any-agent/blob/main/docs/native-pilot.md" target="_blank" rel="noopener noreferrer">Agent setup and pilot limits</a></p>
 </section>
