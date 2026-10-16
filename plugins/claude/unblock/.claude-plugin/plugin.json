@@ -1,0 +1,16 @@
+{
+  "name": "unblock",
+  "version": "0.4.0",
+  "description": "Request human help, recover continuity, and verify that an agent continued.",
+  "author": {
+    "name": "ashfulcra"
+  },
+  "repository": "https://github.com/ashfulcra/unblock-any-agent",
+  "homepage": "https://github.com/ashfulcra/unblock-any-agent",
+  "keywords": [
+    "agents",
+    "continuity",
+    "human-in-the-loop"
+  ],
+  "displayName": "Unblock Any Agent"
+}

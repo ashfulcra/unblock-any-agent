@@ -40,8 +40,8 @@
 **Files:** Create web/src/routes/mcp/+server.js, docs/native-http-mcp.md; modify web/.env.example, native/package version declarations and setup docs/tests. Keep private proof fixtures outside source.
 **Interfaces:** /mcp wires createService from existing server config plus UNBLOCK_MCP_ORIGIN; optional missing origin returns503. All methods use one guarded handler; only POST dispatches. Version0.4.0 in server/export/native MCP and package expectations.
 
-- [ ] Wire route/config/version/docs; run full Python/web/check/build and package checks. Expected preserved baseline plus seven-tool MCP HTTP behavior; private bindings absent from source/exports.
-- [ ] Continue the bounded M2-2 harness started before Task1, deploy and exercise actual SDK discovery/request, close initial client, answer in deployed dashboard, recover in replacement, declare/read back action, write/read private synthetic marker, settle/report observed progress and complete. Verify revoked later call denied. No external effect or marketplace claim.
-- [ ] Fresh whole-branch review with focus above, one RED-to-GREEN fix pass and full required checks; source scan/PR/CI/readback/main integration, own V5 fold and harness evidence. Full M3 remains incomplete.
+- [x] Wire route/config/version/docs; run full Python/web/check/build and package checks. Expected preserved baseline plus seven-tool MCP HTTP behavior; private bindings absent from source/exports.
+- [x] Continue the bounded M2-2 harness started before Task1, deploy and exercise actual SDK discovery/request, close initial client, answer in deployed dashboard, recover in replacement, declare/read back action, write/read private synthetic marker, settle/report observed progress and complete. Verify revoked later call denied. No external effect or marketplace claim.
+- [x] Fresh whole-branch review with focus above, one RED-to-GREEN fix pass and full required checks; source scan/PR/CI/readback/main integration, own V5 fold and harness evidence. Full M3 remains incomplete.
 
 Self-review: each focus maps to Task1 protocol tests; actual route/deploy/replacement behavior is Task2. Operator modules remain excluded from worker exports. Ash’s standing autonomous execution supplies inline execution; preserve decisions in the private plan ledger and continue without repeating permission menus.

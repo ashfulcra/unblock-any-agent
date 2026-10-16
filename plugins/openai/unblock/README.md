@@ -1,0 +1,9 @@
+# Unblock Any Agent — local development package
+
+Canonical source, shared skills, contributions and stars: https://github.com/ashfulcra/unblock-any-agent
+
+This self-contained openai export includes the `unblock` skill and agent-bound stdio MCP bridge. It needs Python 3.13+, `uv`, an enrolled native pilot or running loopback proof service, and `UNBLOCK_AGENT_CONFIG` set to the absolute path of the enrolled agent's private 0600 config. Keep that file outside the plugin. `uv` resolves the pinned MCP SDK when starting the bridge; the first run needs package-network access. The agent config selects its authorized identity, source and transport; tools cannot enroll an owner or choose another sender.
+
+Read `skills/unblock/references/setup.md` for setup, CLI fallback and listener requirements. The runtime is included. Native profiles use `python3 -m unblock.native_client`; the separate loopback proof uses `python3 -m unblock`. On Claude Code, load this directory with `--plugin-dir`; the standard skill is namespaced as `/unblock:unblock`. No bare `/unblock` registration or namespace reservation is claimed. Test actual tool discovery and a harmless recovery call in your host.
+
+This package does not install a persistent listener, connect ChatGPT web, implement remote OAuth or prove marketplace eligibility. The stdio MCP bridge ends with its host session; configure a separate environment listener or supported scheduled check for later answers. Public submission requires the remaining remote-host authentication, installation, listing and license decisions documented in the canonical repository. No project license has been selected for public distribution.
