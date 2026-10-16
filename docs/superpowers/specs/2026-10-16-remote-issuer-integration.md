@@ -12,13 +12,15 @@ Keep existing Fulcra MCP clients working. Evaluate this as a distinct protected 
 
 The inspected issuer is `fulcradynamics/fulcra-context-mcp@bb928b120901330c155e98e0beb1de973f4f52b9`, locked to FastMCP 3.4.7, MCP 1.28.1 and google-cloud-storage 3.15.1. These are issuer dependency versions, not changes to this repository's local MCP runtime.
 
-A no-credential probe of its actual provider observed requested resource loss and loss of login state after provider replacement. Its refresh model lacks a resource field. A separate four-case probe of the actual SDK token handler accepted both matching and mismatched resources for code and refresh exchange. The handler parses `resource` but does not check or forward it to the exchange methods. This is feasibility evidence, not a live issuer exploit or authentication test.
+A no-credential probe of its actual provider observed requested resource loss and loss of login state after provider replacement. Its refresh model lacks a resource field. A separate four-case probe of the actual SDK token handler accepted both matching and mismatched resources for code and refresh exchange. The same probe was repeated on MCP 2.3.0, the current local plugin dependency, to avoid assuming that an old SDK limitation still required custom work. Both versions showed the same resource gap. The handler parses `resource` but does not check or forward it to the exchange methods. This is feasibility evidence, not a live issuer exploit or authentication test.
 
 Reproduce the latter with:
 
 ```sh
 uv run --no-project --with mcp==1.28.1 python scripts/probes/pinned_sdk_resource.py
 ```
+
+Replace `mcp==1.28.1` with `mcp==2.3.0` to compare the current local-runtime SDK. The probe records the actual installed version.
 
 The probe uses fake authentication/provider objects and `.invalid` URLs. All four statuses should be 200 in this pinned baseline; the implemented resource adapter must reject the mismatched cases before effects.
 

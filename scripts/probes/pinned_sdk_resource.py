@@ -1,5 +1,6 @@
 """Throwaway no-credential probe against the actual pinned SDK token handler."""
 import asyncio,base64,hashlib,json,time
+from importlib.metadata import version
 from urllib.parse import urlencode
 from starlette.requests import Request
 from mcp.server.auth.handlers.token import TokenHandler
@@ -36,6 +37,6 @@ async def main():
             response=await request(h,form)
             rows.append({'grant':grant,'requested_resource_matches':resource==RESOURCE,'http_status':response.status_code,'provider_called':bool(p.calls),'provider_resource':p.calls[0]['provider_resource'] if p.calls else None})
     assert len(rows)==4 and all(r['http_status']==200 and r['provider_called'] for r in rows)
-    result={'sdk':'mcp1.28.1','real_handler_exercised':True,'upstream_authentication':False,'production_changes':False,'cases':rows,'conclusion':'Pinned token handler parses resource but neither checks it nor passes requested resource to provider exchange. Explicit resource validation must run before token effects.'}
+    result={'sdk':'mcp'+version('mcp'),'real_handler_exercised':True,'upstream_authentication':False,'production_changes':False,'cases':rows,'conclusion':'Observed token handler parses resource but neither checks it nor passes requested resource to provider exchange. Explicit resource validation must run before token effects.'}
     print(json.dumps(result,indent=2))
 asyncio.run(main())
