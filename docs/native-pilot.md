@@ -6,7 +6,7 @@ The first hosted needs/answer/continuity slice uses the official Fulcra sign-in 
 
 Sign in to your dashboard, expand **Connect an agent**, and enroll its stable ID, display name and environment, using the Agent worker role. Save the displayed credential in that agent's private credential storage. It is encrypted and scoped by the server to that agent. Do not give the agent your browser cookie or Fulcra access token. Enrollment is pending until its record appears in the dashboard. The owner UI prepares a fixed expiry and retains the same enrollment intent across uncertain/pending retries. Direct owner integrations first GET `prepare_enrollment`, then POST `enroll` with that fixed `expires_at`, identity and stable intent; requested expiry cannot exceed the upstream session or one hour.
 
-A pilot credential expires with the originating Fulcra access token, within one hour. Sign in and enroll again when it expires. No refresh token is stored or embedded, and the pilot does not promise unattended renewal. A replacement session can use an unexpired credential for the same agent; enrolling another ID creates another agent. Revoke an enrollment in the dashboard; native processing is asynchronous, so revocation is confirmed only after readback. Rotating the server sealing key invalidates all outstanding credentials and makes old signed pilot records unavailable unless the key is retained; keep it private and backed up.
+A pilot credential expires with the originating Fulcra access token, within one hour. Sign in and enroll again when it expires. No refresh token is stored or embedded in these grants. A separately configured [trusted owner operator](native-renewal.md) can renew the same existing scopes using the existing CLI login; this is an explicit opt-in workflow, not automatic installation or perpetual-authentication coverage. A replacement session can use an unexpired credential for the same agent; enrolling another ID creates another agent. Revoke an enrollment in the dashboard; native processing is asynchronous, so revocation is confirmed only after readback. Rotating the server sealing key invalidates all outstanding credentials and makes old signed pilot records unavailable unless the key is retained; keep it private and backed up.
 
 ## Agent HTTP contract
 
@@ -15,6 +15,7 @@ The pilot endpoint is `/api/unblock/<operation>` on your saved dashboard origin.
 | Operation | Method and input |
 | --- | --- |
 | `identity` | GET; returns the verified role, stable ID, environment and permitted agent IDs. |
+| `enrollment` | GET; an authenticated worker/listener can read its own verified grant ID, role/scope and actual expiry, without exposing a token. Existing `identity` shape stays unchanged. |
 | `attention` | GET; returns all of this agent's current requests, retained context, answers, progress and uncertain actions. A source failure is an error, never a quiet result. |
 | `recover` | GET with `request_id`; permits only this agent's request. |
 | `request` | POST JSON: stable `intent_id`, `need_key`, `need`, `context`, `recommendation`, `next_action`, `parents: []`. Identity comes from the credential. Same agent/need key converges across sessions. |

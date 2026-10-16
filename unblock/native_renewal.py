@@ -37,13 +37,36 @@ def file_hash(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def prepare_operator(owner,profiles,destination):
+    """Select existing, verified connections; do not enroll or start anything."""
+    if not 1<=len(profiles)<=20:raise ValueError('Select bounded existing private profiles')
+    me=owner.call('identity');work=owner.call('attention')
+    if me.get('kind')!='owner' or work.get('source')!='checked' or work.get('principal')!=me:raise DomainError('operator_owner_source_required',403)
+    selected=[]
+    for path in profiles:
+        path=Path(path)
+        if not path.is_absolute():raise ValueError('Use absolute private profiles')
+        client=NativeClient.from_file(path)
+        if client.url!=owner.url:raise ValueError('Profiles must use the same saved dashboard origin')
+        connection=client.call('enrollment')
+        grants=[g for g in work['grants'] if g['grant_id']==connection.get('grant_id')]
+        if len(grants)!=1 or grants[0].get('revoked'):raise DomainError('operator_connection_not_permitted',403)
+        scope=Renewal._scope(grants[0])
+        if connection.get('kind') not in ('agent','listener') or any(connection.get(field)!=scope[field] for field in ('kind','environment')) or sorted(connection.get('agent_ids',[]))!=scope['agent_ids'] or connection.get('id')!=scope['agent_id'] or connection.get('expires_at')!=grants[0]['expires_at']:raise DomainError('operator_connection_scope_mismatch',403)
+        selected.append({'anchor_grant_id':grants[0]['grant_id'],'profile':str(path)})
+    if len({r['anchor_grant_id'] for r in selected})!=len(selected) or len({str(Path(r['profile']).resolve()) for r in selected})!=len(selected):raise ValueError('Duplicate enrollment profiles')
+    destination=Path(destination).absolute()
+    private_write(destination,{'url':owner.url,'owner_id':me['id'],'enrollments':selected})
+    return {'prepared':True,'configuration':str(destination),'enrollments':len(selected),'operator_started':False}
+
+
 class Renewal:
     def __init__(self,owner,config,state,lease_seconds=3600,renew_before=300,now=time.time):
         if not isinstance(lease_seconds,int) or not 30<=lease_seconds<=3600 or not isinstance(renew_before,int) or not 1<=renew_before<lease_seconds:raise ValueError('Invalid bounded renewal timing')
         self.owner,self.state,self.now=owner,Path(state).absolute(),now
         self.lease,self.margin=lease_seconds,renew_before
         self.config=private_read(config)
-        if set(self.config)!={'url','enrollments'} or self.config['url']!=owner.url:raise ValueError('Operator origin must match saved configuration')
+        if not {'url','enrollments'}<=set(self.config) or set(self.config)-{'url','enrollments','owner_id'} or self.config['url']!=owner.url:raise ValueError('Operator origin must match saved configuration')
         NativeClient(self.config['url'],'validate-origin')
         rows=self.config['enrollments']
         if not isinstance(rows,list) or not 1<=len(rows)<=20:raise ValueError('Select existing enrollment anchors')
@@ -77,6 +100,7 @@ class Renewal:
     def _grants(self,state):
         me=self.owner.call('identity')
         if me.get('kind')!='owner' or not me.get('id'):raise DomainError('operator_owner_required',403)
+        if self.config.get('owner_id',me['id'])!=me['id']:raise DomainError('operator_prepared_owner_changed',403)
         if state.get('owner_id',me['id'])!=me['id']:raise DomainError('operator_owner_changed',403)
         work=self.owner.call('attention')
         if work.get('source')!='checked' or work.get('principal')!=me or not isinstance(work.get('grants'),list):raise DomainError('operator_source_unverified',503)
@@ -103,6 +127,7 @@ class Renewal:
             with self._lock():
                 if self.state.exists():state=private_read(self.state)
                 binding={'url':self.config['url'],'enrollments':sorted(self.config['enrollments'],key=lambda r:r['anchor_grant_id'])}
+                if self.config.get('owner_id'):binding['owner_id']=self.config['owner_id']
                 if state.get('binding',binding)!=binding:raise DomainError('operator_configuration_changed_reconcile',403)
                 state.setdefault('entries',{});state['binding']=binding
                 for selected in binding['enrollments']:
@@ -117,7 +142,7 @@ class Renewal:
                     if not pending:
                         expiry=min(self.owner.call('prepare_enrollment')['expires_at'],int(self.now())+self.lease)
                         if expiry<=self.now():raise DomainError('operator_session_expired_reconnect',401)
-                        pending={'body':{**scope,'intent_id':'renew:'+str(uuid.uuid4()),'expires_at':expiry}}
+                        pending={'body':{**scope,'intent_id':'renew:'+str(uuid.uuid4()),'expires_at':expiry,'renewal_of':entry.get('latest',{}).get('grant_id',anchor)}}
                         entry['pending']=pending;self._save(state) # Durable before any enrollment attempt.
                     if pending['body']['expires_at']<=self.now():
                         body=pending['body'];visible=[g for g in grants if g.get('intent_id')==body['intent_id'] and g['agent_id']==scope['agent_id']]
@@ -159,10 +184,15 @@ class Renewal:
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--owner-auth',required=True,choices=['fulcra-cli']);parser.add_argument('--config',required=True);parser.add_argument('--state',required=True);parser.add_argument('--once',action='store_true');parser.add_argument('--interval',type=int,default=30);parser.add_argument('--lease-seconds',type=int,default=3600);parser.add_argument('--renew-before',type=int,default=300)
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--owner-auth',required=True,choices=['fulcra-cli']);parser.add_argument('--config',required=True);parser.add_argument('--state',required=True);parser.add_argument('--once',action='store_true');parser.add_argument('--interval',type=int,default=30);parser.add_argument('--lease-seconds',type=int,default=3600);parser.add_argument('--renew-before',type=int,default=300);parser.add_argument('--prepare',action='store_true');parser.add_argument('--profile',action='append',default=[])
     args=parser.parse_args()
     if not 1<=args.interval<=3600:parser.error('Interval must be between1 and3600 seconds')
+    if args.prepare and not args.profile:parser.error('Preparation requires existing private connection profiles')
+    if args.profile and not args.prepare:parser.error('Profiles are selected during explicit preparation')
     try:
+        if args.prepare:
+            origin=NativeClient.from_file(args.profile[0]).url
+            print(json.dumps(prepare_operator(NativeOwner(origin,cli_access_token()),args.profile,args.config)));return
         while True:
             config=private_read(args.config)
             try:
@@ -172,7 +202,7 @@ def main():
             print(json.dumps(result),flush=True)
             if args.once:return
             time.sleep(args.interval)
-    except (ValueError,KeyError,OSError):
+    except (ValueError,KeyError,OSError,DomainError):
         print(json.dumps({'checked':False,'error':'operator_configuration_failed_reconcile_private_state'}),file=sys.stderr);raise SystemExit(1) from None
 
 if __name__=='__main__':main()

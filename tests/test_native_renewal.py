@@ -14,6 +14,11 @@ try:
 except ImportError:
     Renewal=None;replace_private=None
 
+try:
+    from unblock.native_renewal import prepare_operator
+except ImportError:
+    prepare_operator=None
+
 ANCHOR='11111111-1111-4111-8111-111111111111'
 
 class OwnerFixture:
@@ -54,6 +59,20 @@ class NativeRenewalTests(unittest.TestCase):
         profile=private_read(self.profile);self.assertTrue(profile['token'].startswith('sealed-'));self.assertEqual(profile['expires_at'],first['expires_at'])
         self.assertEqual(self.renewal().tick()['renewed'],0)
         self.owner.offline=True;result=self.renewal().tick();self.assertFalse(result['checked']);self.assertEqual(private_read(self.profile),profile)
+
+    def test_preparation_uses_verified_connection_grants_without_manual_internal_ids(self):
+        self.assertIsNotNone(prepare_operator,'Operator preparation helper missing')
+        identity={'id':'alpha','kind':'agent','environment':'here','agent_ids':['alpha'],'grant_id':ANCHOR,'expires_at':1005}
+        destination=self.root/'prepared.json'
+        with patch('unblock.native_client.NativeClient.call',return_value=identity) as lookup:
+            result=prepare_operator(self.owner,[self.profile],destination)
+            lookup.assert_called_once_with('enrollment')
+        self.assertTrue(result['prepared']);self.assertFalse(result['operator_started'])
+        self.assertEqual(private_read(destination),{'url':self.owner.url,'owner_id':'owner','enrollments':[{'anchor_grant_id':ANCHOR,'profile':str(self.profile)}]});self.assertEqual(self.owner.calls,[])
+        denied=self.root/'denied.json'
+        with patch('unblock.native_client.NativeClient.call',return_value={**identity,'id':'neighbor'}):
+            with self.assertRaises(DomainError):prepare_operator(self.owner,[self.profile],denied)
+        self.assertFalse(denied.exists())
 
     def test_expired_pending_readback_is_reconciled_before_a_new_intent(self):
         self.owner.lose=True;self.renewal().tick();first=self.owner.calls[0];self.owner.clock+=70

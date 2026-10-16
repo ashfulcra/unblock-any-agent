@@ -81,6 +81,32 @@ export function openAgent(token,key) {
 /** @param {any} grant @param {any[]} events @param {string} account @param {number} now */
 export function authorizeAgent(grant,events,account,now) {
   if (!grant.agent_id || grant.owner_id !== account || !Number.isFinite(grant.expires_at) || grant.expires_at <= now) throw new Error('Agent credential expired or account mismatch');
-  if (!events.some(e => e.kind === 'enroll' && e.agent_id === grant.agent_id && e.payload.grant_id === grant.grant_id) || events.some(e => e.kind === 'revoke' && e.payload.grant_id === grant.grant_id)) throw new Error('Agent enrollment unavailable or revoked');
+  const enrollment=enrollmentRecord(grant.grant_id,events);
+  if (grantScope(grant.agent_id,grant)!==grantScope(enrollment.agent_id,enrollment.payload)) throw new Error('Agent enrollment scope mismatch');
   return grant;
+}
+
+/** @param {string} agent_id @param {any} payload */
+export function grantScope(agent_id,payload) {
+  return canonical({agent_id,kind:payload.kind || 'agent',environment:payload.environment || 'pilot',agent_ids:[...(payload.agent_ids || [agent_id])].sort()});
+}
+/** Verify ancestry without inheriting an expired parent's lease. Revocation
+ * remains effective for every descendant after asynchronous source readback.
+ * @param {string} grant_id @param {any[]} events */
+export function enrollmentRecord(grant_id,events) {
+  const revoked=new Set(events.filter(e=>e.kind==='revoke').map(e=>e.payload.grant_id));
+  const enrollments=new Map();
+  for (const e of events.filter(e=>e.kind==='enroll')) {
+    const rows=enrollments.get(e.payload.grant_id) || [];rows.push(e);enrollments.set(e.payload.grant_id,rows);
+  }
+  const seen=new Set();let id=grant_id,scope='',first;
+  while (id) {
+    const rows=enrollments.get(id);
+    if (seen.has(id) || revoked.has(id) || !rows || rows.length!==1) throw new Error('Agent enrollment unavailable or revoked');
+    seen.add(id);const current=rows[0],currentScope=grantScope(current.agent_id,current.payload);
+    if (scope && scope!==currentScope) throw new Error('Agent enrollment scope mismatch');
+    scope=currentScope;first=first || current;id=current.payload.renewal_of;
+  }
+  if (!first) throw new Error('Agent enrollment unavailable');
+  return first;
 }

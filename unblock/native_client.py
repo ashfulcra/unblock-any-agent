@@ -11,7 +11,7 @@ import uuid
 from .client import private_read
 from .store import DomainError
 
-READ=('identity','attention','recover')
+READ=('identity','enrollment','attention','recover')
 WRITE=('request','progress','action','settle','delivery')
 
 
