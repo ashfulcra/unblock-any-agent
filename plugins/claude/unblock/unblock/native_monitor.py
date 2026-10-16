@@ -126,7 +126,7 @@ class NativeMonitor:
                 body={'expectation_id':row['id'],'revision':revision['id']};encoded=json.dumps(body,sort_keys=True);key=hashlib.sha256(encoded.encode()).hexdigest()
                 found=self._found(rows,body,me)
                 db.execute('INSERT OR IGNORE INTO observation_journal(key,body,record_id,status) VALUES (?,?,?,?)',(key,encoded,found,'confirmed' if found else 'pending'))
-            pending=db.execute("SELECT key,body,record_id FROM observation_journal WHERE status='pending' ORDER BY rowid LIMIT 32").fetchall()
+            pending=db.execute("SELECT key,body,record_id FROM observation_journal WHERE status='pending' ORDER BY attempts,rowid LIMIT 32").fetchall()
         for key,body,receipt in pending:
             with self.ledger() as db:started=db.execute("UPDATE observation_journal SET attempts=attempts+1,uncertain=1 WHERE key=? AND status='pending'",(key,)).rowcount
             if not started:continue
@@ -136,7 +136,7 @@ class NativeMonitor:
                 with self.ledger() as db:
                     db.execute('BEGIN IMMEDIATE');current=db.execute('SELECT record_id FROM observation_journal WHERE key=?',(key,)).fetchone()
                     if current and current[0] and current[0]!=result['record_id']:raise ValueError('Concurrent observation receipt mismatch')
-                    db.execute("UPDATE observation_journal SET record_id=? WHERE key=? AND status='pending'",(result['record_id'],key))
+                    db.execute("UPDATE observation_journal SET record_id=? WHERE key=?",(result['record_id'],key))
                 rows,_=self._source(me);self._reconcile(rows,me)
             except DomainError as error:
                 if error.status not in (400,413,415,422):return self._summary(False,'source_unavailable')

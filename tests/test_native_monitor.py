@@ -5,6 +5,8 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 import json
 from pathlib import Path
 import subprocess
+import sqlite3
+import uuid
 import sys
 import tempfile
 import threading
@@ -94,6 +96,52 @@ class NativeMonitorTests(unittest.TestCase):
             for future in futures:future.result(timeout=8)
         result=self.monitor().tick();self.assertTrue(result['receipt_errors'][0]['uncertain']);self.assertEqual(calls,[{'expectation_id':WID,'revision':REV}]*2)
         self.client.publish();self.assertEqual(self.monitor().tick()['persisted'],1)
+
+    def test_concurrent_late_success_retains_receipt_after_rejection_and_restart(self):
+        self.monitor().tick();self.client.now=1011;original=self.client.call;arrived=threading.Event();lock=threading.Lock();calls=[]
+        def call(op,data=None):
+            if op!='observe_due':return original(op,data)
+            with lock:index=len(calls);calls.append(copy.deepcopy(data))
+            if index==0:
+                if not arrived.wait(5):raise AssertionError('Second attempt missing')
+                raise DomainError('early rejection',400)
+            arrived.set();deadline=time.monotonic()+5
+            while time.monotonic()<deadline:
+                with sqlite3.connect(self.state) as db:status=db.execute('SELECT status FROM observation_journal').fetchone()[0]
+                if status=='rejected':break
+                time.sleep(.01)
+            if status!='rejected':raise AssertionError('First attempt not rejected')
+            self.client.accepted=[self.client.observation()]
+            return {'record_id':OBS,'expectation_id':WID,'visibility':'pending'}
+        self.client.call=call
+        with concurrent.futures.ThreadPoolExecutor(2) as pool:
+            futures=[pool.submit(self.monitor().tick) for _ in range(2)]
+            for future in futures:future.result(timeout=8)
+        with sqlite3.connect(self.state) as db:
+            receipt,status,attempts,uncertain=db.execute('SELECT record_id,status,attempts,uncertain FROM observation_journal').fetchone()
+        self.assertEqual(receipt,OBS);self.assertEqual(status,'rejected');self.assertEqual(attempts,2);self.assertTrue(uncertain)
+        self.client.visible=[{**self.client.accepted[0],'id':'44444444-4444-4444-a444-444444444444'}]
+        self.assertFalse(self.monitor().tick()['checked'])
+        self.client.publish();self.assertEqual(self.monitor().tick()['persisted'],1)
+
+    def test_pending_queue_rotates_so_later_due_items_receive_a_first_attempt(self):
+        class ManyClient(FixtureClient):
+            def call(self,op,data=None):
+                if op=='attention':
+                    result=super().call(op,data);template=result['expectations'][0];rows=[]
+                    for i in range(65):
+                        row=copy.deepcopy(template);row['id']=str(uuid.UUID(int=i+1));rows.append(row)
+                    result['expectations']=rows;return result
+                if op=='observe_due':
+                    self.calls.append(copy.deepcopy(data))
+                    return {'record_id':str(uuid.uuid5(uuid.NAMESPACE_URL,data['expectation_id'])),'expectation_id':data['expectation_id'],'visibility':'pending'}
+                return super().call(op,data)
+        client=ManyClient();client.now=1011
+        for i in range(3):
+            before=len(client.calls);result=NativeMonitor(client,'here',self.state).tick();self.assertTrue(result['checked']);self.assertLessEqual(len(client.calls)-before,32)
+        self.assertEqual(len({c['expectation_id'] for c in client.calls}),65);self.assertEqual(result['pending_receipts'],65)
+        before=copy.deepcopy(client.calls);NativeMonitor(client,'here',self.state).tick()
+        self.assertTrue(all(c in before for c in client.calls[len(before):]))
 
     def test_revocation_foreign_source_and_rebinding_never_erase_known_work(self):
         self.monitor().tick();self.client.fail=True;self.client.status=401

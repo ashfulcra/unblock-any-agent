@@ -88,7 +88,10 @@ export function createService(config) {
       }
       if(operation==='work_update') {
         if(principal.kind!=='agent')throw new Error('Enrolled worker required');
-        const work_key=text(body,'work_key',160),expectation_id=stableId(grant.agent_id+':expectation:'+work_key);
+        const work_key=text(body,'work_key',160),legacy_id=stableId(grant.agent_id+':expectation:'+work_key);
+        const legacy=expectations.find(r=>r.id===legacy_id && r.agent_id===grant.agent_id && r.environment===principal.environment);
+        // Keep already-published pilot identities; new work is collision-safe before readback.
+        const expectation_id=legacy?.id || stableId(JSON.stringify(['expectation/2',grant.agent_id,principal.environment,work_key]));
         const existing=expectations.find(r=>r.id===expectation_id);
         const parents=body.parents;
         if(!Array.isArray(parents) || parents.length>10)throw new Error('Explicit expectation parents required');
