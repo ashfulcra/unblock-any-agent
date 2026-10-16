@@ -1,6 +1,6 @@
 # Agent work pickup
 
-Status: proposed design supplement, 2026-10-16. Requirement R17 is confirmed; the implementation mechanisms below require live verification. This supplements the first-release spec and does not approve product implementation.
+Status: proposed design supplement, 2026-10-16. Requirements R17 and R18 are confirmed; the implementation mechanisms below require live verification. This supplements the first-release spec and does not approve product implementation.
 
 ## The failure to prevent
 
@@ -18,7 +18,7 @@ Use native plugin integrations for pickup where current hosts support them. Use 
 | Authorized external runtime | Can run independently of the original session and recover work into a supported runtime. | Requires a verified launcher, credential custody, operating owner and explicit scope. It must not impersonate an arbitrary existing chat. |
 | Check at startup or explicit Continue | Broad portability and useful recovery. | Does not solve idle automatic pickup on its own. |
 
-Recommended combination: native receivers first; an external runtime only for a demonstrated missing capability; startup reconciliation and explicit recovery on every entry point. This is not a mandate for a new bus, polling daemon, scheduler, or legacy actor binding.
+Confirmed minimum: provide a Claude route and listener instructions for every connected agent. Prefer a separate listener session or scheduled task on each machine/environment that checks permitted work and routes it to the sessions registered there. Reuse native receivers where available; otherwise use runtime-appropriate ticks, heartbeats or loops. Startup reconciliation supplements recurring checks. This does not require a new bus, universal scheduler or legacy actor binding. Plugins or equivalents for additional platforms are later scope; Claude and ChatGPT retain their existing official-plugin goals.
 
 ## Current mechanism evidence
 
@@ -35,6 +35,16 @@ Checked against primary documentation on 2026-10-16; none has yet passed this pr
 MCP Events is particularly relevant: it can invoke configured work when a matching event arrives on supported Work surfaces. The application still needs an actual source of events, including when a result arrives through an external agent connection. A scheduled check for an overdue obligation remains a separate detector requirement.
 
 OpenAI's public submission rules currently exclude lifecycle-hook packages. This does not exclude the documented remote MCP Events route. Keep the public export and any separately installed local capabilities distinct, and verify directory acceptance rather than assuming local support implies public eligibility.
+
+## Listener baseline and local routing
+
+The [listener setup guide](../../listener-setup.md) is required onboarding material for every connected agent, including agents without a native plugin. At connection time, select who performs recurring checks and how a real check is triggered. Prefer one listener per environment over a model loop in every worker session. The listener may be a dedicated session, native scheduled task, or a small runtime check under an existing scheduler; choose from current verified capabilities rather than requiring a new service.
+
+Maintain an authorized local routing directory: stable agent/work identity, environment, actual session destination, last confirmation and any permitted replacement route. Refresh it on session start/resume and retire stale destinations. A listener routes only work it is allowed to read and deliver; it does not accept another agent’s assignment or perform that agent’s task merely because it observes it. It must not guess recipients or inject input through unsupported UI/process shortcuts.
+
+A recurring instruction must have a configured trigger, cadence, lifetime, authentication and restart owner. A heartbeat needs a real heartbeat source; an in-session loop needs the session alive; a local schedule needs its machine available. Record these dependencies, expose gaps and recover unhandled work after reconnect. If local dispatch is unavailable, retain the item and present the exact missing route. Check-only coverage must not be labeled automatic routing.
+
+The first-release demonstration must cover Claude pickup as well as the selected ChatGPT route. Native Claude mod delivery or a verified listener/scheduled route can satisfy the Claude path. Every other connected runtime gets concrete listener instructions and an honest activation state; do not delay portable participation until a platform-specific plugin exists.
 
 ## Receiver contract for each agent
 
@@ -56,7 +66,7 @@ Use the Tycho scenario as an early integration test before the full dashboard: t
 
 Repeat for an agent busy with other work; a disconnected/reconnected receiver; a closed/replacement session; duplicated or out-of-order notifications; and a result written through each entry point. Disable the receiver and revoke access in negative tests. The product must expose those failures, preserve the work, and avoid unauthorized execution. Verify quiet periods do not invoke models unnecessarily.
 
-At least one real automatic pickup route for each advertised automatic host must pass. Validate the portable fallback separately. Track independent stall detection separately, because a functioning receiver cannot invent an event for an obligation whose deadline nobody checks.
+The Claude route and selected ChatGPT route must pass real pickup tests; for Claude, a scheduled/listener route is acceptable without waiting for native plugin delivery. At least one real automatic pickup route for each advertised automatic host must pass. Validate the portable fallback separately. Track independent stall detection separately, because a functioning receiver cannot invent an event for an obligation whose deadline nobody checks.
 
 ## Sources
 

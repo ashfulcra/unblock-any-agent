@@ -31,6 +31,7 @@ The assigned maintainer identity is **Unblock Any Agent Maintainer**, with the r
 | R15 | Build the Claude and ChatGPT plugins for distribution through their official public plugin marketplaces/directories, including applicable package, naming, review, and publishing requirements. | Official-marketplace requirement |
 | R16 | Move quickly toward a short public plugin/command identity such as `unblock` and `/unblock`, accounting for namespace competition and each host's actual invocation rules. | Short-name and launch-urgency direction |
 | R17 | Make agent work pickup a core capability: returned answers, reviews, assignments, and released dependencies must reach the responsible agent and cause safe continuation without the human repeatedly prompting it to check. Evaluate plugins as runtime integrations, and verify each host’s actual delivery and wake behavior. | User identified the missed Tycho review as a product failure case |
+| R18 | Include a Claude pickup route in the minimum scope; at bare minimum provide listener instructions for every connected agent. Prefer a separate listener session or scheduled task on each machine/environment that checks and routes work to its local sessions; support runtime-appropriate ticks, heartbeats and loops. Plugins or equivalents for additional platforms are later functionality. | Explicit listener baseline and platform sequencing |
 
 ## User decision record
 
@@ -49,6 +50,8 @@ The following statements preserve the user's wording in conversation order.
 11. “For for the Claude and ChatGPT plugins, the goal is to use their recently enabled functionality for plugins to become plugins in their official marketplace. So consider package requirements, naming conventions ETC.  There’s a namespace competition there, so we’re going fast towards the slash command /unblock or something similar”
 
 12. “Note that you did not notice Tycho’s review. Figuring out how each agent will pick up work is a big part of this. I’m assuming the plug-ins can help here.”
+
+13. “We need at minimum a Claude route also, or at bare minimum listener instructions for each connected agent, preferable a separate session or scheduled task on each machine / Env checking and routing messages to sessions that live there, or instructions to check with regular ticks, heartbeats, loops whatever for other agent runtimes as appropriate. Later functionality will be figuring out plugins or equivalent for other platforms.”
 
 ## Official distribution and naming
 
@@ -89,6 +92,12 @@ The maintainer's V5 participation provides temporary development awareness. It c
 ## Agent work pickup
 
 A durable answer is useful only if the responsible agent picks it up. Treat the missed Tycho review as an acceptance scenario: a review arrived while the maintainer was idle, and Ash had to request a check. The design must cover idle, busy, disconnected, closed, and replacement sessions, and distinguish publication, delivery, agent acknowledgment, and observed continuation. Plugins are candidates for native integration, not evidence that automatic pickup is enabled. See the [work-pickup design](superpowers/specs/2026-10-16-agent-work-pickup.md).
+
+## Minimum listener coverage
+
+Claude pickup is part of the first-release baseline alongside ChatGPT. Every connected agent gets [listener setup instructions](listener-setup.md) appropriate to its actual runtime. Prefer one separate local listener session or scheduled task per machine/environment to check permitted work and route it to registered local sessions. Where that is unsuitable, use an existing heartbeat/tick facility or a supported in-session loop, with its lifetime and restart behavior documented. A passive instruction to check someday is not active coverage.
+
+The baseline does not wait for native plugins on every runtime. Preserve the existing Claude and ChatGPT official-plugin goals; develop additional platform plugins or equivalents later.
 
 ## Open product choice
 

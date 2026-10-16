@@ -7,6 +7,8 @@ This repository currently contains planning documents. Product code, installable
 ## Planning documents
 
 - [First-release specification](docs/superpowers/specs/2026-10-16-unblock-first-release.md): the concrete scope ready for review.
+- [Agent work pickup](docs/superpowers/specs/2026-10-16-agent-work-pickup.md): Claude and ChatGPT routes, local listeners and recovery.
+- [Listener setup](docs/listener-setup.md): the minimum onboarding contract for every connected agent.
 - [Requirements](docs/requirements.md): confirmed user decisions, including clean-slate architecture, official marketplaces, short naming, and forkable personal dashboards.
 - [Current platform assessment](docs/current-platform-assessment.md): evidence and the proposed architecture.
 - [Marketplace release plan](docs/marketplace-release-plan.md): package, naming, invocation, and submission rules.
