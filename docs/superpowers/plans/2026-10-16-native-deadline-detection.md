@@ -26,17 +26,17 @@
 - Restart, revoked profile and changed source/scope cannot erase or repurpose the monitor ledger; Task2 pins it.
 - Closing a linked expectation does not remove unanswered human needs or uncertain actions; Task1 pins it and Task2 checks the deployed view.
 
-### Task1: Native expectation and observation contract
+### Task 1: Native expectation and observation contract
 
 **Files:** create `web/src/lib/server/unblock-expectations.js`, `web/tests/unblock-expectations.test.js`; modify `unblock-core.js`, `unblock-api.js`, `unblock/native_client.py`, `unblock/native_mcp.py`, `web/src/lib/server/unblock-mcp.js` and their tests.
 
 **Interfaces:** `projectExpectations(records, now)` returns `{id,agent_id,history,revisions,observations,current_observations,state}`. Native `work_update`/`observe_due` inputs are fixed by the spec. Attention adds `expectations`. MCP `record_work_update` maps to native updates; existing contracts remain valid.
 
-- [ ] Write failing fixture tests for scoped declaration, early/due observation, repeated checks, update/history/conflicts, historical retry and linked unanswered/uncertain requests. Run `cd web && npm test`; confirm failures identify absent behavior.
-- [ ] Implement projection, service authorization/publication and CLI/MCP schemas, including strict scalar/reference/time/parent validation and actual server-time checks. Keep non-request records out of the existing request projection.
-- [ ] Run web tests/check/build and native client/MCP Python tests; require real modern+legacy eight-tool discovery and harmless recovery. Commit the independently testable contract.
+- [x] Write failing fixture tests for scoped declaration, early/due observation, repeated checks, update/history/conflicts, historical retry and linked unanswered/uncertain requests. Run `cd web && npm test`; confirm failures identify absent behavior.
+- [x] Implement projection, service authorization/publication and CLI/MCP schemas, including strict scalar/reference/time/parent validation and actual server-time checks. Keep non-request records out of the existing request projection.
+- [x] Run web tests/check/build and native client/MCP Python tests; require real modern+legacy eight-tool discovery and harmless recovery. Commit the independently testable contract.
 
-### Task2: Independent monitor, dashboard and live proof
+### Task 2: Independent monitor, dashboard and live proof
 
 **Files:** create `unblock/native_monitor.py`, `tests/test_native_monitor.py`, `web/src/lib/components/ExpectationsDashboard.svelte`, `docs/native-detection.md`; modify `NeedsDashboard.svelte`, skill setup, package builder/generated exports, native HTTP/pilot/listener docs and execution ledger.
 

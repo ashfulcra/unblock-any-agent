@@ -43,8 +43,14 @@ def build_server(config):
 
     @server.tool(annotations=read)
     def recover_work()->dict[str,Any]:
-        """Read all of this agent's native requests, current/historical answers, corrected context, action/settlement evidence and observed progress. A failed source remains unknown."""
+        """Read owned requests, answers, corrected context, action evidence, expected updates and missed-update investigations. A failed source remains unknown."""
         return call('attention')
+
+    @server.tool(annotations=write)
+    def record_work_update(key:str,summary:str,context:str,evidence:str,next_action:str,parent_revisions:list[str],status:Literal['working','completed','cancelled'],next_update_at:int|None,request_id:str|None=None)->dict[str,Any]:
+        """Declare or update expected work without inventing a human need. Working needs a future Unix-second deadline; terminal states need null. Review explicit current parent revisions and retain conflicts. Completion closes this expectation only, never a linked question or uncertain action. Independent detection needs a separate scoped monitor."""
+        payload={'work_key':key,'summary':summary,'context':context,'evidence':evidence,'next_action':next_action,'parents':sorted(reference(r) for r in parent_revisions),'status':status,'next_update_at':next_update_at,'request_id':reference(request_id) if request_id is not None else None}
+        return call('work_update',{'intent_id':intent('work-update',payload),**payload})
 
     @server.tool(annotations=read)
     def get_work(request_id:str)->dict[str,Any]:

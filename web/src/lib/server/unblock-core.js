@@ -32,7 +32,7 @@ export function projectEvents(records) {
   const events = readEvents(records);
   const groups = new Map();
   for (const e of events) {
-    if (['enroll','revoke'].includes(e.kind)) continue;
+    if (['enroll','revoke','work_update','overdue'].includes(e.kind)) continue;
     if (!e.request_id) throw new Error('Missing request identity');
     const list = groups.get(e.request_id) || []; list.push(e); groups.set(e.request_id,list);
   }

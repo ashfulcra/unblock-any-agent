@@ -20,9 +20,9 @@ const call=(c,name,args={})=>c.callTool({name,arguments:args});
 function data(r){assert.notEqual(r.isError,true,JSON.stringify(r.content));return r.structuredContent;}
 const need={key:'http-proof',need:'Choose color',context:'Synthetic context',recommendation:'Blue',next_action:'Verify private marker only'};
 
-test('modern SDK seven-tool loop retains pending/readback, revision and replacement history',async t=>{
+test('modern SDK eight-tool loop retains pending/readback, revision and replacement history',async t=>{
  const f=fixture(),a=await enroll(f),h=createNativeMcp({service:f.service,origin}),{client:c,methods}=await connect(t,h,()=>a.credential);
- assert.deepEqual((await c.listTools()).tools.map(x=>x.name).sort(),['ask_for_help','recover_work','get_work','revise_need','record_progress','begin_action','reconcile_action'].sort());assert.ok(methods.includes('server/discover'));assert.equal(c.getServerCapabilities()?.tools?.listChanged,false);
+ assert.deepEqual((await c.listTools()).tools.map(x=>x.name).sort(),['ask_for_help','recover_work','get_work','revise_need','record_progress','begin_action','reconcile_action','record_work_update'].sort());assert.ok(methods.includes('server/discover'));assert.equal(c.getServerCapabilities()?.tools?.listChanged,false);
  const r=data(await call(c,'ask_for_help',need));assert.equal(r.visibility,'pending');assert.equal(data(await call(c,'recover_work')).requests.length,0);f.publish();assert.equal(data(await call(c,'get_work',{request_id:r.request_id})).agent_id,'alpha');
  assert.equal(data(await call(c,'get_work',{request_id:r.request_id.toUpperCase()})).agent_id,'alpha');
  const revised=data(await call(c,'revise_need',{request_id:r.request_id,parent_revisions:[r.record_id],need:'Updated question',context:'Corrected context',recommendation:'Blue',next_action:'Private marker'}));f.publish();await c.close();
@@ -32,7 +32,7 @@ test('modern SDK seven-tool loop retains pending/readback, revision and replacem
  data(await call(replacement,'record_progress',{request_id:r.request_id,revision:revised.record_id,answer_ids:w.answers.map((/** @type {any} */ x)=>x.id),stage:'resumed',evidence:'Fixture readback observed'}));f.publish();const final=data(await call(replacement,'recover_work')).requests[0];assert.equal(final.state,'resumed');assert.equal(final.actions.length,1);assert.equal(final.settlements.length,1);
 });
 test('legacy SDK initialize reaches the same checked worker source',async t=>{
- const f=fixture(),a=await enroll(f),h=createNativeMcp({service:f.service,origin}),{client,methods}=await connect(t,h,()=>a.credential,false);assert.ok(methods.includes('initialize'));assert.equal((await client.listTools()).tools.length,7);assert.equal(data(await call(client,'recover_work')).source,'checked');
+ const f=fixture(),a=await enroll(f),h=createNativeMcp({service:f.service,origin}),{client,methods}=await connect(t,h,()=>a.credential,false);assert.ok(methods.includes('initialize'));assert.equal((await client.listTools()).tools.length,8);assert.equal(data(await call(client,'recover_work')).source,'checked');
 });
 test('cookies, owner tokens, anonymous and listener callers cannot enable worker tools',async()=>{
  const f=fixture(),a=await enroll(f),listener=await enroll(f,'listener','listener'),h=createNativeMcp({service:f.service,origin});
@@ -81,4 +81,13 @@ test('action key accepts the service boundary and rejects an overlong key before
  const args={request_id:request.request_id,key:'k'.repeat(160),description:'Boundary-only synthetic action'};
  assert.equal(data(await call(client,'begin_action',args)).visibility,'pending');assert.equal(actions,1);
  assert.equal((await call(client,'begin_action',{...args,key:'k'.repeat(161)})).isError,true);assert.equal(actions,1);
+});
+
+for(const modern of [true,false])test(`declared update roundtrip uses checked native recovery (${modern?'modern':'legacy'})`,async t=>{
+ const f=fixture(),a=await enroll(f),h=createNativeMcp({service:f.service,origin}),{client}=await connect(t,h,()=>a.credential,modern);
+ const args={key:'review',summary:'Review work',context:'Synthetic context',evidence:'Review began',next_action:'Return report',parent_revisions:[],status:'working',next_update_at:1010,request_id:null};
+ const saved=data(await call(client,'record_work_update',args));assert.equal(saved.visibility,'pending');f.publish();
+ let work=data(await call(client,'recover_work'));assert.equal(work.expectations.length,1);assert.equal(work.requests.length,0);
+ const row=work.expectations[0];data(await call(client,'record_work_update',{...args,parent_revisions:[saved.record_id],status:'completed',next_update_at:null,evidence:'Report checked and returned'}));f.publish();
+ work=data(await call(client,'recover_work'));assert.equal(work.expectations[0].state,'completed');assert.equal(work.expectations[0].history.length,2);assert.equal(row.agent_id,'alpha');
 });

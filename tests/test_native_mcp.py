@@ -36,13 +36,23 @@ class NativeMCPTests(unittest.TestCase):
     def test_native_stdio_tools_and_replacement_use_native_contract(self):
         async def scenario():
             async with Client(self.params) as client:
-                self.assertEqual({t.name for t in (await client.list_tools()).tools},{'ask_for_help','recover_work','get_work','revise_need','record_progress','begin_action','reconcile_action'})
+                self.assertEqual({t.name for t in (await client.list_tools()).tools},{'ask_for_help','recover_work','get_work','revise_need','record_progress','begin_action','reconcile_action','record_work_update'})
                 result=await client.call_tool('ask_for_help',{'key':'stable','need':'Pick color','context':'Synthetic page','recommendation':'Blue','next_action':'Apply and read back'})
                 self.assertFalse(result.is_error);self.assertEqual(result.structured_content['visibility'],'pending')
             async with Client(self.params) as replacement:
                 result=await replacement.call_tool('recover_work',{});self.assertFalse(result.is_error);self.assertEqual(result.structured_content['requests'][0]['id'],self.rid)
                 bad=await replacement.call_tool('get_work',{'request_id':'../../enroll'});self.assertTrue(bad.is_error)
             path,body=self.calls[0];self.assertEqual(path,'/api/unblock/request');self.assertEqual(body['need_key'],'stable');self.assertEqual(body['context'],'Synthetic page');self.assertNotIn('agent_id',body)
+        asyncio.run(scenario())
+
+    def test_work_update_tool_uses_scoped_native_contract(self):
+        async def scenario():
+            async with Client(self.params) as client:
+                body={'key':'review','summary':'Review','context':'Synthetic context','evidence':'Review began','next_action':'Return report','parent_revisions':[],'status':'working','next_update_at':2000,'request_id':None}
+                result=await client.call_tool('record_work_update',body)
+                self.assertFalse(result.is_error)
+                path,payload=self.calls[-1]
+                self.assertEqual(path,'/api/unblock/work_update');self.assertEqual(payload['work_key'],'review');self.assertEqual(payload['parents'],[]);self.assertIsNone(payload['request_id']);self.assertNotIn('agent_id',payload)
         asyncio.run(scenario())
 
     def test_both_copied_plugin_exports_support_native_profiles(self):
