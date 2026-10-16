@@ -2,9 +2,9 @@
 
 Help agents obtain what they need and continue their work. Agents needing a human are priority zero; help from another agent uses the same product experience. Continuity preserves useful context, decisions, artifacts, and outstanding work across sessions and authorized handoffs.
 
-A working local proof now includes an authenticated request/answer service, a minimal human dashboard, a CLI, durable recovery and an environment listener. See [Run the local proof](docs/local-proof.md). The canonical [unblock skill](skills/unblock/SKILL.md) and [local Claude/OpenAI development exports](docs/local-plugins.md) now include an agent-bound MCP bridge. Remote OAuth/MCP integration, installed-host verification, official distribution and public app deployment remain in progress.
+A working local proof now includes an authenticated request/answer service, a minimal human dashboard, a CLI, durable recovery and an environment listener. See [Run the local proof](docs/local-proof.md). The canonical [unblock skill](skills/unblock/SKILL.md) and [local Claude/OpenAI development exports](docs/local-plugins.md) now include an agent-bound MCP bridge. The [Fulcra web baseline](https://unblock-any-agent.my.fulcra.ai) is deployed with sign-in and an owner-only build harness. Hosted needs/answers, remote MCP integration, installed-host verification and official distribution remain in progress.
 
-[Create your own dashboard](docs/personal-dashboard.md): fork the canonical source, try it locally, and follow the Fulcra-hosted setup path with your own account. [Live integration prerequisites](docs/live-integration.md) distinguish what still needs a production service or host/account access.
+[Create your own dashboard](docs/personal-dashboard.md): fork the canonical source, try it locally, and follow the Fulcra-hosted setup path with your own account. [Live integration status](docs/live-integration.md) records the verified baseline and remaining host/account integration work.
 
 ## Planning documents
 

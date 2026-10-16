@@ -1,0 +1,32 @@
+# Unblock Any Agent — Fulcra web app
+
+Hosted baseline: https://unblock-any-agent.my.fulcra.ai
+
+Canonical source, shared skills, forks and optional stars: https://github.com/ashfulcra/unblock-any-agent
+
+Based on the official [Fulcra Svelte template](https://github.com/fulcradynamics/app-template-svelte/tree/613a3d817df7933e73b6fb9cbda86fd7377b8e6b). The supplied public Fulcra client/device-flow configuration works locally and after deployment. **No new OAuth application, callback allowlist or separate database is required for the web baseline.** Authentication behavior is preserved; changes to supporting auth files are typing/equivalent defaults only. The hosted baseline currently provides sign-in and the owner-only build harness; needs/responses are the next milestone.
+
+## Local setup
+
+```sh
+npm ci
+cp .env.example .env
+npm run dev
+```
+
+Set your own server-only `OWNER_USER_ID` and harness annotation in `.env` through the [Fulcra web-app skill](https://github.com/fulcradynamics/agent-skills/tree/main/skills/build-and-deploy-a-web-app). Reuse the annotation and deploy project stored in your own workspace progress. Never commit `.env`, tokens, owner identity or deployment bindings.
+
+```sh
+npm run check
+npm run build
+```
+
+Type check currently reports zero errors and two existing template `on:click` deprecation warnings. A compatible lockfile update removed the inherited high/moderate audit advisories; four low cookie advisories remain inherited through SvelteKit 2, whose offered fix requires a major framework update. The app uses constant cookie names/path/domain; that upgrade is tracked separately from the baseline.
+
+## Deployment and evaluation
+
+Follow the skill's [Fulcra deployment flow](https://github.com/fulcradynamics/agent-skills/blob/main/skills/build-and-deploy-a-web-app/references/deploy.md). Create one deploy project, retain its actual returned domain privately, and use fresh project-scoped deployment access for subsequent deploys. Pass environment configuration at build and runtime. No personal Vercel account is needed for this path.
+
+M1 is evaluated against actual authenticated API data, anonymous/non-owner denials and the owner dashboard's real run/evidence/workspace panels. An owner should try the interactive sign-in once; the skill tracks that confirmation as a nonblocking outstanding item. Deployment alone is not a completed milestone.
+
+The repository's [personal dashboard guide](../docs/personal-dashboard.md) covers forking, ownership and later updates. A custom remote MCP OAuth gateway remains a separate plugin integration question and does not gate this app.
