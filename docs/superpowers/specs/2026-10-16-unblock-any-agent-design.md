@@ -92,6 +92,10 @@ Retries, reconnects, and parallel sessions must not cause duplicated consequenti
 
 Where a host cannot wake an agent, retain a pending continuation and provide a visible Continue action or recovery instructions. Readiness to deliver is established for the actual account, host, and session. A configured route or running process is not proof that the intended worker received the request.
 
+## Reliable agent work pickup
+
+The user identified a concrete failure: Tycho’s review was durable and addressed correctly, but the maintainer did not notice until the human prompted a check. Work pickup is a core requirement (R17). Plugins must be evaluated as receiver integrations that can cause authorized execution, alongside their skills and UI. Availability of a result, notification delivery, agent acknowledgment, and observed continuation remain distinct. Each agent needs a verified route and explicit busy/offline/replacement behavior. See the [work-pickup design](2026-10-16-agent-work-pickup.md); it supplements the first-release spec and takes precedence over interpreting a manual Continue path as sufficient automated pickup.
+
 ## Continuity and recovery
 
 The user should be able to return to ongoing work without reconstructing its context. An agent resuming after context compaction, a new session, an outage, or replacement should know the objective, relevant user instructions and preferences, decisions already made, useful knowledge, artifacts, progress, pending obligations, blockers, and next useful actions. Preserve the source and recency of information so later agents can distinguish a current instruction from an outdated assumption.

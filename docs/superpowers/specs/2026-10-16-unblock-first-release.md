@@ -1,6 +1,10 @@
 # Unblock First Release Specification
 
-Status: ready for user review, 2026-10-16. This specification selects a proposed first release from the broader [design](2026-10-16-unblock-any-agent-design.md), [requirements](../../requirements.md), [platform assessment](../../current-platform-assessment.md), and [marketplace plan](../../marketplace-release-plan.md). It is not yet approved for implementation.
+Status: revision required after independent Fable review, 2026-10-16. This specification selects a proposed first release from the broader [design](2026-10-16-unblock-any-agent-design.md), [requirements](../../requirements.md), [platform assessment](../../current-platform-assessment.md), and [marketplace plan](../../marketplace-release-plan.md). It is not yet approved for implementation.
+
+## Independent review follow-up
+
+The [Tycho-delegated Fable review](../../reviews/2026-10-16-fable-spec-review.md) of commit `102e3ce` recommends **revise first**. Its findings are retained as review claims pending validation. Before implementation planning, resolve the monitor runtime and credential custody (F1), MCP authorization-server path (F2), agent identity binding (F3), and future multi-human response write path (F4). Validate the remaining platform and release findings against current sources. Reviewer naming and scope recommendations remain proposals; they do not override the user’s requirements.
 
 ## Release outcome
 
@@ -61,7 +65,17 @@ Support both agent-raised requests and detected stalls. The first detector check
 
 Unattended monitoring requires a configured route that actually runs independently of the originating session. Setup must report watched sources, observed cadence, and delivery support, and verify one real due item. If no such route is enabled, show monitoring as inactive and offer an explicit check; do not advertise background detection. The implementation plan must include at least one supported independent monitoring route for the public release and keep model invocation out of quiet checks where possible.
 
-Continuity and requests remain useful without automatic wake. The first recovery test may open the replacement session manually. Automatic delivery, busy-session handling, and unattended monitoring each require their own observed acceptance result.
+Continuity and requests remain useful without automatic wake. The first recovery test may open the replacement session manually. Automatic pickup, busy-session handling, and unattended monitoring each require their own observed acceptance result. The public release must demonstrate automatic pickup on the native routes it advertises; manual Continue is a recovery mode, not a passing automatic-pickup test.
+
+## Agent work pickup
+
+R17 makes work pickup a release-critical function. Returned reviews, human answers, assigned work, and released dependencies must cause the responsible authorized agent to reconcile and continue. A saved result or sent notification does not establish that the agent noticed it. Treat pickup and independent stall detection as separate contracts: the former reacts to available work; the latter discovers a missing expected result.
+
+Each connected agent needs a selected, verified receiver: its host and supported surfaces, authenticated agent/work mapping, permitted triggering mechanism, active/subscribed status, handling while busy, behavior with no live session, and a recovery action. Prefer native plugin integrations. Evaluate MCP Events for supported ChatGPT Work surfaces and Claude Code mod prompt submission for live Code sessions. Both are documented candidates, not demonstrated integrations. Local Codex, Claude chat/Cowork, and bare skills require their own capability result; do not inherit another surface’s wake claim.
+
+Show whether a result is available, delivery was attempted/accepted, the responsible agent acknowledged the current work, and useful continuation occurred. These are observable distinctions, not a required storage schema. Bound delivery retries and the time to acknowledgment; keep missing acknowledgment visible and escalate through a configured authorized route. Reconnect/start must reconcile unresolved work, including items whose notification was already delivered. Preserve identity, context, and unresolved work when selecting a replacement session. Do not interrupt unrelated work, grant extra permissions, or repeat external actions through automatic delivery.
+
+The [work-pickup design](2026-10-16-agent-work-pickup.md) records the incident, current evidence, proposed approach and test matrix. Prove native pickup before investing in the full dashboard. No new watcher or schedule is installed by this specification change.
 
 ## Distribution and personal dashboards
 
@@ -84,10 +98,12 @@ The web app prominently offers Create your own dashboard. Its instructions let a
 9. **Basic agent help:** use an existing authorized connection to obtain a result from another agent; preserve responsibility and share only the allowed context.
 10. **Personal deployment and package install:** deploy a clean fork for another account; install both platform exports; test the actual invocation forms, reconnect, and updates. Verify that canonical repository links remain intact and no private configuration is included.
 
+11. **Returned review without a human nudge:** after the requesting agent becomes idle, another agent returns a review. The enabled receiver starts or resumes the correct authorized worker, which retrieves the report and records its next useful action. No human message requests a check. Repeat while busy, after reconnect/session replacement, with duplicate delivery, and with the receiver disabled. The disabled route must show a pickup gap and recovery action; it must not count as a successful automatic test.
+
 Use real tools and record the tested version, host, action, and observed result. A unit test, successful package upload, model statement, or configured route alone is not end-to-end acceptance. Official review and marketplace publication remain separate release outcomes.
 
 ## Implementation sequence after review
 
-First prove authentication and persistence contracts with a minimal real request/response/context flow. Then build the human dashboard and replacement-session recovery. Add the detector and verified independent monitoring route, complete both plugin exports and four-entry-point onboarding, and verify clean-account deployment. Prepare and submit the smallest complete useful release as soon as its acceptance evidence and listing requirements are satisfied.
+First prove authentication, persistence, and native work-pickup contracts with a minimal real request/response/context flow. Then build the human dashboard and replacement-session recovery. Add the detector and verified independent monitoring route, complete both plugin exports and four-entry-point onboarding, and verify clean-account deployment. Prepare and submit the smallest complete useful release as soon as its acceptance evidence and listing requirements are satisfied.
 
 Use the reviewed specification to write the executable implementation plan. Keep new features outside this first-release boundary unless they are necessary to satisfy an acceptance case or the user changes the requirements.
