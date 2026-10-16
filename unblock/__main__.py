@@ -22,7 +22,7 @@ def parser():
         if cmd=='answer':
             command.add_argument('--revision',required=True);command.add_argument('--answer',required=True);command.add_argument('--key',required=True)
         elif cmd=='progress':
-            command.add_argument('--response-id',required=True);command.add_argument('--state',required=True,choices=['acknowledged','resumed','completed','blocked']);command.add_argument('--evidence',required=True)
+            command.add_argument('--answer-revision');command.add_argument('--response-id',required=True);command.add_argument('--state',required=True,choices=['acknowledged','resumed','completed','blocked']);command.add_argument('--evidence',required=True)
         elif cmd=='revise':
             command.add_argument('--need',required=True);command.add_argument('--context',required=True)
         elif cmd=='declare':
@@ -32,6 +32,7 @@ def parser():
     sub.add_parser('attention');sub.add_parser('recent')
     revoke=sub.add_parser('revoke');revoke.add_argument('principal_id')
     listener=sub.add_parser('listen');listener.add_argument('--routes',required=True);listener.add_argument('--environment',required=True);listener.add_argument('--state',default='.state/delivery.db');listener.add_argument('--once',action='store_true');listener.add_argument('--interval',type=float,default=60)
+    recovery=sub.add_parser('recover-dispatch');recovery.add_argument('request_id');recovery.add_argument('--environment',required=True);recovery.add_argument('--routes',required=True);recovery.add_argument('--state',default='.state/delivery.db');recovery.add_argument('--evidence',required=True)
     demo=sub.add_parser('demo-worker');demo.add_argument('--output',required=True,help='Private synthetic output directory; performs no external action');demo.add_argument('--request-id',help='Validated work reference instead of stdin')
     return p
 
@@ -62,6 +63,9 @@ def main():
                 result=client.call('POST','/api/requests',{'key':args.key,'need':args.need,'context':json.loads(args.context)})
             elif args.command=='revoke':
                 result=client.call('POST','/api/revoke',{'principal_id':args.principal_id})
+            elif args.command=='recover-dispatch':
+                from .listener import Listener
+                result=Listener(client,args.environment,args.routes,args.state).recover(args.request_id,args.evidence)
             elif args.command=='listen':
                 from .listener import Listener
                 listener=Listener(client,args.environment,args.routes,args.state)
@@ -78,18 +82,21 @@ def main():
                 if not current:raise ValueError('No current answer')
                 response=current[-1]
                 if work['conflicting_answers'] or any(a['status']=='uncertain' for a in work['actions']):
-                    result=client.call('POST',f'/api/requests/{rid}/progress',{'response_id':response['id'],'state':'blocked','evidence':'Synthetic worker requires reconciliation before acting.'})
+                    result=client.call('POST',f'/api/requests/{rid}/progress',{'response_id':response['id'],'answer_revision':work['answer_revision'],'state':'blocked','evidence':'Synthetic worker requires reconciliation before acting.'})
                 else:
                     artifact=Path(args.output)/f'{rid}-{response["id"]}.json'
+                    expected={'request_id':rid,'response_id':response['id'],'goal':work['context'].get('goal'),'decision':response['answer'],'synthetic':True}
                     if not artifact.exists():
-                        client.call('POST',f'/api/requests/{rid}/progress',{'response_id':response['id'],'state':'acknowledged','evidence':'Synthetic worker retrieved current context and answer.'})
-                        private_write(artifact,{'request_id':rid,'response_id':response['id'],'goal':work['context'].get('goal'),'decision':response['answer'],'synthetic':True})
-                    result=client.call('POST',f'/api/requests/{rid}/progress',{'response_id':response['id'],'state':'resumed','evidence':'Synthetic local continuation wrote '+str(artifact)})
+                        client.call('POST',f'/api/requests/{rid}/progress',{'response_id':response['id'],'answer_revision':work['answer_revision'],'state':'acknowledged','evidence':'Synthetic worker retrieved current context and answer.'})
+                        try:private_write(artifact,expected)
+                        except FileExistsError:pass
+                    if private_read(artifact)!=expected:raise ValueError('Existing continuation artifact does not match current work')
+                    result=client.call('POST',f'/api/requests/{rid}/progress',{'response_id':response['id'],'answer_revision':work['answer_revision'],'state':'resumed','evidence':'Synthetic local continuation wrote '+str(artifact)})
             else:
                 path='/api/requests/'+args.request_id
                 if args.command=='show':result=client.call('GET',path)
                 else:
-                    operations={'answer':('answers',{'revision':getattr(args,'revision',None),'answer':getattr(args,'answer',None),'key':getattr(args,'key',None)}),'progress':('progress',{'response_id':getattr(args,'response_id',None),'state':getattr(args,'state',None),'evidence':getattr(args,'evidence',None)}),'revise':('revise',{'need':getattr(args,'need',None),'context':json.loads(getattr(args,'context','{}'))}),'declare':('actions',{'key':getattr(args,'key',None),'description':getattr(args,'description',None)}),'settle':('settle',{'action_id':getattr(args,'action_id',None),'evidence':getattr(args,'evidence',None)})}
+                    operations={'answer':('answers',{'revision':getattr(args,'revision',None),'answer':getattr(args,'answer',None),'key':getattr(args,'key',None)}),'progress':('progress',{'answer_revision':getattr(args,'answer_revision',None),'response_id':getattr(args,'response_id',None),'state':getattr(args,'state',None),'evidence':getattr(args,'evidence',None)}),'revise':('revise',{'need':getattr(args,'need',None),'context':json.loads(getattr(args,'context','{}'))}),'declare':('actions',{'key':getattr(args,'key',None),'description':getattr(args,'description',None)}),'settle':('settle',{'action_id':getattr(args,'action_id',None),'evidence':getattr(args,'evidence',None)})}
                     operation,data=operations[args.command];result=client.call('POST',path+'/'+operation,data)
         print(json.dumps(result,indent=2))
     except (DomainError,ValueError,OSError,KeyError) as error:

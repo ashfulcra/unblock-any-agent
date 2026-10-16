@@ -1,6 +1,7 @@
 """Local client. Credentials stay in private files, never in a URL."""
 import json
 import os
+import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 import urllib.error
@@ -12,10 +13,20 @@ from .store import DomainError
 def private_write(path, value):
     path=Path(path)
     path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
-    fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-    with os.fdopen(fd,'w') as stream:
-        json.dump(value,stream,indent=2)
-        stream.write('\n')
+    fd,temporary=tempfile.mkstemp(prefix='.'+path.name+'.',dir=path.parent)
+    try:
+        with os.fdopen(fd,'w') as stream:
+            json.dump(value,stream,indent=2)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Publish a complete file atomically, without replacing an existing target.
+        os.link(temporary,path)
+        directory=os.open(path.parent,os.O_RDONLY)
+        try:os.fsync(directory)
+        finally:os.close(directory)
+    finally:
+        os.unlink(temporary)
 
 
 def private_read(path):
@@ -48,7 +59,7 @@ class Client:
             def redirect_request(self,*_):
                 return None
         try:
-            with urllib.request.build_opener(NoRedirect()).open(req,timeout=15) as response:
+            with urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect()).open(req,timeout=15) as response:
                 return json.load(response)
         except urllib.error.HTTPError as error:
             with error:

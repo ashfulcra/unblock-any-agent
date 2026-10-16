@@ -25,6 +25,7 @@ async function load() {
       card.append(top, node('h2', item.need));
       if (item.context.next_action) card.append(node('p', `Then: ${item.context.next_action}`, 'next-action'));
       for (const response of item.responses) card.append(node('p', `${response.stale ? 'Earlier answer' : 'Answer saved'}: ${response.answer}`, 'saved'));
+      for (const action of item.actions) if (action.status === 'uncertain') card.append(node('p', `Needs verification: ${action.description}`, 'warning'));
       if (item.conflicting_answers) card.append(node('p', 'Multiple answers need reconciliation by the responsible agent.', 'warning'));
       if (item.status === 'answered') card.append(node('p', 'Waiting for the agent to pick up the answer.', 'waiting'));
       for (const progress of item.progress) card.append(node('p', `${progress.state}: ${progress.evidence}`, 'progress'));

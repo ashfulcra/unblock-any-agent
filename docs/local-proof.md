@@ -77,12 +77,22 @@ python3 -m unblock recent
 
 The original worker process can end before an answer arrives. A replacement with the same authorized agent credential retrieves the saved goal, answer revision and prior progress. For a different identity, use owner-authorized enrollment and a deliberate handoff; do not copy another agent's identity casually. Restart the listener using its same delivery ledger. A changed trusted local route is retried independently of an earlier failed route.
 
-Reading or delivering a result does not remove it from pending work. A zero-exit worker that does not report progress is shown as queued, with bounded retry. A failed source read retains known pending items and reports uncertainty. Stale answers remain in history but cannot authorize progress against a newer request revision. Conflicting answers remain visible for reconciliation.
+Reading or delivering a result does not remove it from pending work. A zero-exit worker that does not report progress is shown as queued, with bounded retry. A failed source read retains known pending items and reports uncertainty. Stale answers remain in history but cannot authorize progress against a newer request revision. Conflicting answers remain visible for reconciliation. Progress against multiple current answers must include the `answer_revision` returned by `show`; this prevents delayed reports from hiding a newer answer. Open unanswered requests remain discoverable by the agent, and uncertain actions remain in attention even after continuation.
 
 For consequential external actions, the core exposes `declare` and `settle` operations to retain intent and evidence. An interrupted action remains uncertain; a successor must inspect the actual result or obtain reconciliation. This local proof does not offer universal exactly-once execution.
+
+If a listener dies during dispatch, its durable execution claim prevents a second listener from launching overlapping work. Claims remain exclusive for the command timeout plus 30 seconds. After expiry, pickup reports `dispatch_recovery_required` rather than silently retrying. Verify that the previous worker stopped and reconcile any external actions, then release that claim with retained evidence:
+
+```sh
+python3 -m unblock --config .state/listener.json recover-dispatch REQUEST_ID --environment local --routes .state/routes.json --state .state/delivery.db --evidence 'Verified prior worker stopped; describe the observed result and reconciliation'
+```
+
+An active claim cannot be released. All listeners for an environment must share the same delivery ledger; separate ledgers cannot coordinate execution. A queued asynchronous route must deduplicate deliveries at its target as well. Settlement of an uncertain action changes the delivery revision, releasing the old blocked attempt for a fresh check.
+
+Continuation artifacts and credential files are published atomically. Existing continuation artifacts must match the current request, answer and context; empty, truncated or mismatched output causes a visible failure instead of a resumed claim.
 
 ## Observed evidence
 
 The automated suite covers account/agent isolation, revocation, concurrent retry convergence, stale and conflicting responses, replacement-store recovery, uncertain actions, HTTP boundaries, listener failure/restart, wrong-environment/agent routing, and queued delivery without acknowledgment. `scripts/smoke.py` adds the independent-process delayed-answer proof. The local dashboard was inspected with a synthetic account and its answer submission was verified to show “Waiting for the agent to pick up the answer.”
 
-Native Claude evidence is recorded separately from the synthetic suite. Never infer native or marketplace success from these tests alone.
+The independent-process `--claude` smoke also passed on Claude Code 2.1.301 using a new restricted synthetic session and a simple UUID-only command. Earlier heredoc attempts were correctly blocked by native command approval; the simpler authorized command passed without bypass flags. This establishes one local native route. It does not establish marketplace installation, busy-session routing or universal wake.

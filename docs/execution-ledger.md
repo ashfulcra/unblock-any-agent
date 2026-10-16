@@ -1,6 +1,6 @@
 # Execution ledger
 
-2026-10-16: Ash requested an exit check every turn and continuous safe execution. The maintainer’s private exit check now includes addressed replies as well as V5 work. Four regression checks passed; live source verification remains to be recorded.
+2026-10-16: Ash requested an exit check every turn and continuous safe execution. The maintainer’s private exit check now includes addressed replies as well as V5 work. Four regression checks passed. The live authorized exit read also passed: owned work remained active, addressed replies were checked, and the prior Tycho review had an evidence-backed resolution. This is bounded identity-specific coverage, not a fleet-wide all-clear.
 
 Decision: proceed inline in the clean checkout on a local feature branch. No other agent is editing this repository; avoid unnecessary worktree setup. Shared backend is a provisional choice, not a user preference. Local SQLite and owner bootstrap auth are limited to the loopback proof, not a claim of production or marketplace readiness.
 
@@ -13,3 +13,20 @@ Task 2 complete: real loopback HTTP tests cover authentication, revoked credenti
 Task 3 local route complete: real subprocess workers prove delayed pickup, wrong-agent/environment isolation, failed-route replacement, queued-without-ack behavior and restart recovery. A resource-leak regression failed, then passed after explicitly closing listener database connections. Full suite: 23 passed. These are synthetic worker tests, not yet evidence of native Claude or ChatGPT pickup.
 
 Independent-process smoke passed: listener started before the synthetic human answer; worker acknowledged, wrote one local decision artifact, and reported resumed without a check prompt. Suite: 25 passed. Browser QA verified synthetic sign-in, answer submission and waiting-for-pickup display. Native Claude attempts remain under investigation; initial heredoc permission failure prompted a safer UUID-only command adapter. No bypass flag is used.
+
+Native Claude independent-process smoke passed after replacing the ambiguous heredoc with a single UUID-only CLI command. Claude Code 2.1.301, normal permission checks, safe/restricted modes, explicit fresh synthetic session, three-turn and USD 0.50 bounds. A separate listener process existed before the answer; it dispatched, and the actual worker reported acknowledged then resumed with recovered context. This proves the local restricted-session route, not a marketplace plugin or arbitrary desktop session wake.
+
+Fresh independent review: [raw report](reviews/2026-10-16-local-loop-review.md). Six Important findings were reproduced with failing regressions, then fixed in one pass:
+
+| Finding | Resolution |
+| --- | --- |
+| Late old-answer progress hides a newer answer | Transactional answer-set revision check; multiple answers require an explicitly reviewed snapshot. |
+| Uncertain actions disappear after resumed | Attention includes uncertain actions independently of request status; dashboard shows the outstanding verification. |
+| Replacement cannot discover open requests | Agent attention includes its unanswered obligations; listeners still dispatch only current answers. |
+| Retry launches overlapping workers | Exclusive request-level execution claims, conservative crash recovery with retained evidence, and stale-completion protection. Shared ledger required. |
+| Settlement never releases blocked pickup | Action reconciliation changes the delivery key and permits a fresh attempt. |
+| Partial artifact falsely proves continuation | Atomic no-overwrite publication and validation against the current work before resumed progress. |
+
+Additional checks cover active/expired claim recovery, stale completion against a replacement claim, atomic credential publication, and direct loopback transport without environment proxies. Verification: 37 tests passed; independent synthetic CLI smoke passed; bounded real Claude smoke passed again after the fixes. Both smoke runs observed authenticated acknowledged → resumed progress and verified recovered context. Browser QA used a disposable synthetic owner; its preview server was stopped afterward.
+
+Review scope judgment: the source review does not certify native permissions, production OAuth/MCP, ChatGPT pickup, hosting, marketplaces or visuals. Separate parent evidence establishes only the narrow local Claude route and synthetic browser flow described above. All production integration and public distribution acceptance remains open.

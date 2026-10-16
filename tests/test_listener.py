@@ -77,6 +77,73 @@ class ListenerTests(unittest.TestCase):
         self.assertFalse(tick['checked']);self.assertEqual(tick['pending_known'],1)
         self.assertEqual(tick['error'],'source_unavailable')
 
+    def test_blocked_work_is_released_when_uncertain_action_is_settled(self):
+        self.answer()
+        action=self.store.declare_action(self.agent,self.work['id'],'pending','Verify external result')
+        listener=self.listener(retry_after=0)
+        self.assertEqual(listener.tick()['attempts'][0]['result'],'blocked')
+        self.assertEqual(listener.tick()['attempts'],[])
+        self.store.settle_action(self.agent,self.work['id'],action['id'],'Confirmed external result')
+        attempts=listener.tick()['attempts']
+        self.assertTrue(attempts,'Settling the prerequisite must release pickup')
+        self.assertEqual(attempts[0]['result'],'resumed')
+
+    def test_existing_invalid_artifact_cannot_prove_continuation(self):
+        response=self.answer();self.output.mkdir(mode=0o700)
+        artifact=self.output/f'{self.work["id"]}-{response["id"]}.json'
+        for content in ('','{bad','{"synthetic":true,"decision":"wrong"}'):
+            artifact.write_text(content);artifact.chmod(0o600)
+            self.assertEqual(self.listener(retry_after=0).tick()['attempts'][0]['result'],'failed')
+            self.assertEqual(self.store.get_request(self.agent,self.work['id'])['status'],'answered')
+
+    def test_running_claim_blocks_second_listener_beyond_retry_interval(self):
+        import concurrent.futures,time
+        started=self.root/'started';release=self.root/'release'
+        script='import pathlib,time; p=pathlib.Path('+repr(str(started))+'); p.write_text(p.read_text()+"x" if p.exists() else "x"); r=pathlib.Path('+repr(str(release))+'); end=time.monotonic()+5\nwhile not r.exists() and time.monotonic()<end: time.sleep(.02)'
+        self.update_routes({self.agent.id:{**self.route,'argv':[sys.executable,'-c',script]}})
+        self.answer()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            first=pool.submit(self.listener(retry_after=0).tick)
+            deadline=time.monotonic()+3
+            while not started.exists() and time.monotonic()<deadline:time.sleep(.01)
+            self.assertTrue(started.exists())
+            second=pool.submit(self.listener(retry_after=0).tick)
+            time.sleep(.2)
+            observed=started.read_text();release.touch()
+            first.result(timeout=5);second.result(timeout=5)
+        self.assertEqual(observed,'x','Second listener must not start an overlapping worker')
+
+    def test_expired_dispatch_requires_reconciliation_before_retry(self):
+        import time
+        self.answer();listener=self.listener(retry_after=0)
+        with listener.ledger() as db:
+            db.execute('INSERT INTO claims VALUES (?,?,?)',(self.work['id'],'interrupted',time.time()-1))
+        restarted=self.listener(retry_after=0)
+        result=restarted.tick()
+        self.assertEqual(result['attempts'],[])
+        self.assertEqual(result['errors'][0]['code'],'dispatch_recovery_required')
+        with self.assertRaises(ValueError):restarted.recover(self.work['id'],'')
+        restarted.recover(self.work['id'],'Verified previous worker stopped; no artifact or external action occurred')
+        self.assertEqual(restarted.tick()['attempts'][0]['result'],'resumed')
+        with restarted.ledger() as db:
+            self.assertEqual(db.execute('SELECT evidence FROM recoveries').fetchone()[0],'Verified previous worker stopped; no artifact or external action occurred')
+
+    def test_active_claim_cannot_be_recovered_and_old_completion_cannot_clear_replacement(self):
+        import time
+        self.answer();listener=self.listener(retry_after=0)
+        with listener.ledger() as db:
+            db.execute('INSERT INTO claims VALUES (?,?,?)',(self.work['id'],'active',time.time()+60))
+        with self.assertRaises(ValueError):listener.recover(self.work['id'],'Worker may still be alive')
+        with listener.ledger() as db:db.execute('DELETE FROM claims')
+        def replaced(route,payload):
+            with listener.ledger() as db:
+                db.execute('UPDATE claims SET claim_id=?',('replacement',))
+            return 'queued'
+        listener._run=replaced
+        self.assertEqual(listener.tick()['attempts'][0]['result'],'claim_replaced_reconcile_required')
+        with listener.ledger() as db:
+            self.assertEqual(db.execute('SELECT claim_id FROM claims').fetchone()[0],'replacement')
+
     def test_tick_closes_delivery_database_connections(self):
         import gc, warnings
         self.answer()

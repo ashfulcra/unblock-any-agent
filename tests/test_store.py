@@ -69,7 +69,7 @@ class StoreTests(unittest.TestCase):
         work=self.store.get_request(self.owner,self.request['id'])
         self.assertTrue(work['responses'][0]['stale'])
         self.assertEqual(work['status'],'open')
-        self.assertEqual(self.store.get_attention(self.agent),[])
+        self.assertEqual(self.store.get_attention(self.agent)[0]['status'],'open')
         with self.assertRaises(DomainError): self.store.report_progress(self.agent,work['id'],response['id'],'resumed','Use obsolete answer')
         self.assertEqual(len(work['versions']),2)
 
@@ -79,7 +79,7 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(work['conflicting_answers'])
         self.assertEqual({r['actor_id'] for r in work['responses']},{self.owner.id})
         self.assertEqual(len(work['responses']),2)
-        self.store.report_progress(self.agent,work['id'],two['id'],'resumed','Reconciled both answers; the later human correction explicitly selects B')
+        self.store.report_progress(self.agent,work['id'],two['id'],'resumed','Reconciled both answers; the later human correction explicitly selects B',answer_revision=work['answer_revision'])
         self.assertEqual(self.store.get_request(self.agent,work['id'])['progress'][-1]['response_id'],two['id'])
 
     def test_response_retry_is_idempotent_but_changed_payload_is_rejected(self):
@@ -94,6 +94,37 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.store.get_attention(elsewhere),[])
         with self.assertRaises(DomainError): self.store.get_request(elsewhere,self.request['id'])
         with self.assertRaises(DomainError): self.store.report_progress(here,self.request['id'],self.answer()['id'],'resumed','Listener impersonating agent')
+
+    def test_replacement_discovers_unanswered_owned_obligations(self):
+        restored=Store(self.path)
+        self.assertIn(self.request['id'],[r['id'] for r in restored.get_attention(self.agent)])
+
+    def test_new_answer_cannot_be_hidden_by_old_response_progress(self):
+        old=self.answer()
+        snapshot=self.store.get_request(self.agent,self.request['id'])
+        self.answer('Use B instead',key='new-correction')
+        with self.assertRaises(DomainError):
+            self.store.report_progress(self.agent,self.request['id'],old['id'],'resumed','Applied old A')
+        self.assertEqual(self.store.get_attention(self.agent)[0]['status'],'answered')
+
+    def test_answer_set_revision_guards_reconciliation(self):
+        first=self.answer()
+        before=self.store.get_request(self.agent,self.request['id'])
+        self.assertIn('answer_revision',before)
+        second=self.answer('Use B',key='second-answer')
+        with self.assertRaises(DomainError):
+            self.store.report_progress(self.agent,self.request['id'],first['id'],'resumed','Old view',answer_revision=before['answer_revision'])
+        latest=self.store.get_request(self.agent,self.request['id'])
+        self.store.report_progress(self.agent,self.request['id'],second['id'],'resumed','Examined both; explicit correction selects B',answer_revision=latest['answer_revision'])
+        self.assertEqual(self.store.get_request(self.agent,self.request['id'])['status'],'resumed')
+
+    def test_resumed_cannot_hide_uncertain_action(self):
+        response=self.answer()
+        self.store.declare_action(self.agent,self.request['id'],'uncertain-deploy','Unconfirmed external deployment')
+        self.store.report_progress(self.agent,self.request['id'],response['id'],'resumed','Started checking the unconfirmed deploy')
+        self.assertIn(self.request['id'],[r['id'] for r in self.store.get_attention(self.agent)])
+        self.store.declare_action(self.agent,self.request['id'],'second-action','Another unconfirmed step')
+        self.assertIn(self.request['id'],[r['id'] for r in Store(self.path).get_attention(self.agent)])
 
     def test_interrupted_action_is_retained_and_cannot_be_completed_blindly(self):
         response=self.answer()

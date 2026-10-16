@@ -173,10 +173,12 @@ class Store:
         result=dict(row)
         result['context']=json.loads(result['context'])
         result['responses']=[{**dict(r),'stale':r['revision']!=row['revision']} for r in db.execute('SELECT * FROM responses WHERE request_id=? ORDER BY created,id',(row['id'],))]
+        result['answer_revision']=hashlib.sha256(json.dumps(sorted(r['id'] for r in result['responses'] if not r['stale'])).encode()).hexdigest()
         result['conflicting_answers']=len({r['answer'] for r in result['responses'] if not r['stale']})>1
         result['versions']=[{**dict(v),'context':json.loads(v['context'])} for v in db.execute('SELECT * FROM versions WHERE request_id=? ORDER BY created,id',(row['id'],))]
         result['progress']=[dict(p) for p in db.execute('SELECT * FROM progress WHERE request_id=? ORDER BY created,id',(row['id'],))]
         result['actions']=[dict(a) for a in db.execute('SELECT * FROM actions WHERE request_id=?',(row['id'],))]
+        result['action_revision']=hashlib.sha256(json.dumps(sorted((a['id'],a['status'],a['evidence']) for a in result['actions'])).encode()).hexdigest()
         return result
 
     def request_help(self, actor, key, need, context):
@@ -232,7 +234,7 @@ class Store:
     def get_attention(self, actor):
         with self.transaction() as db:
             self._live(db,actor)
-            candidates=db.execute('SELECT r.id FROM requests r JOIN workspaces w ON w.id=r.workspace_id WHERE w.owner_id=? AND r.status NOT IN (?,?) ORDER BY r.created',(actor.owner_id,'completed','resumed')).fetchall()
+            candidates=db.execute("SELECT r.id FROM requests r JOIN workspaces w ON w.id=r.workspace_id WHERE w.owner_id=? AND (r.status NOT IN (?,?) OR EXISTS (SELECT 1 FROM actions a WHERE a.request_id=r.id AND a.status='uncertain')) ORDER BY r.created",(actor.owner_id,'completed','resumed')).fetchall()
             work=[]
             for candidate in candidates:
                 try:
@@ -241,17 +243,17 @@ class Store:
                     if error.status==404:
                         continue
                     raise
-                if actor.kind=='owner' or row['status']!='open':
+                if actor.kind!='listener' or row['status']!='open':
                     work.append(self._work(db,row))
             return work
 
     def get_recent(self, actor):
         with self.transaction() as db:
             self._live(db,actor,'owner')
-            rows=db.execute('SELECT r.* FROM requests r JOIN workspaces w ON w.id=r.workspace_id WHERE w.owner_id=? AND r.status IN (?,?) ORDER BY r.created DESC LIMIT 50',(actor.id,'resumed','completed')).fetchall()
+            rows=db.execute("SELECT r.* FROM requests r JOIN workspaces w ON w.id=r.workspace_id WHERE w.owner_id=? AND r.status IN (?,?) AND NOT EXISTS (SELECT 1 FROM actions a WHERE a.request_id=r.id AND a.status='uncertain') ORDER BY r.created DESC LIMIT 50",(actor.id,'resumed','completed')).fetchall()
             return [self._work(db,row) for row in rows]
 
-    def report_progress(self, actor, request_id, response_id, state, evidence):
+    def report_progress(self, actor, request_id, response_id, state, evidence, answer_revision=None):
         evidence=text(evidence)
         if state not in ('acknowledged','resumed','completed','blocked'):
             raise DomainError('invalid_progress_state')
@@ -261,6 +263,10 @@ class Store:
             response=db.execute('SELECT * FROM responses WHERE id=? AND request_id=?',(response_id,request_id)).fetchone()
             if not response or response['revision']!=row['revision']:
                 raise DomainError('response_not_current',409)
+            current=self._work(db,row)
+            current_ids=[r['id'] for r in current['responses'] if not r['stale']]
+            if (answer_revision is not None and answer_revision!=current['answer_revision']) or (len(current_ids)>1 and answer_revision is None):
+                raise DomainError('answers_changed_review_current_set',409)
             if state=='completed' and db.execute('SELECT 1 FROM actions WHERE request_id=? AND status=?',(request_id,'uncertain')).fetchone():
                 raise DomainError('uncertain_action_needs_reconciliation',409)
             event={'id':ident(),'request_id':request_id,'response_id':response_id,'agent_id':actor.id,'state':state,'evidence':evidence,'created':time.time()}

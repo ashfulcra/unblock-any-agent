@@ -79,8 +79,8 @@ def create_server(store, host='127.0.0.1', port=8765):
                 raise DomainError('json_object_required')
             return result
 
-        def fields(self, body, required):
-            if set(body)!=set(required):
+        def fields(self, body, required, optional=()):
+            if not set(required)<=set(body) or set(body)-set(required)-set(optional):
                 raise DomainError('invalid_fields')
             return body
 
@@ -156,7 +156,7 @@ def create_server(store, host='127.0.0.1', port=8765):
                     if operation not in methods:
                         raise DomainError('not_found',404)
                     method,fields=methods[operation]
-                    self.fields(body,fields)
+                    self.fields(body,fields,['answer_revision'] if operation=='progress' else [])
                     result=method(actor,rid,**body)
                 self.reply(201,result)
             except DomainError as error:
