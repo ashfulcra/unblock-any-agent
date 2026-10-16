@@ -43,6 +43,6 @@
 - [x] Write failing tests for pending response loss/restart, fixed expiry, frozen scope, revoked anchors/latest grants, private target rejection and simultaneous ticks.
 - [x] Implement smallest operator/ledger/profile replacement; run full Python and relevant package regressions.
 - [x] Run actual short-lived renewal and expired-old/replacement-native checks with dedicated private synthetic anchors, preserving the listener's identity/scope/ledger. Do not weaken production credential limits for the test.
-- [ ] Fresh final review, one RED-to-GREEN fix pass, source scan/publication/readback; retain actual coverage and remaining release prerequisites.
+- [x] Fresh final review, one RED-to-GREEN fix pass, source scan/publication/readback; retain actual coverage and remaining release prerequisites.
 
 Execution: Ash's standing instruction supplies autonomous inline execution. This chooses a bounded existing-auth operator route; general public remote-MCP authorization and persistent host startup remain separate work. Record implementation rulings/evidence in the plan's private ledger.

@@ -20,7 +20,7 @@ A fresh whole-branch reviewer inspected the four-commit branch against its plan,
 
 Both combined regressions failed before the fixes and passed afterwards. The author verified the fixes; the reviewer was not asked to repeat its review.
 
-A separate [returned repository review](https://github.com/ashfulcra/unblock-any-agent/pull/4#discussion_r4298119192) identified a revoked selected connection starving later healthy selections. A two-connection regression failed before the fix. Connection-specific reconciliation failures now retain that connection’s pending state and profile while permitting fresh verified healthy selections to renew. Owner/source failures still stop the whole tick; storage errors also remain fatal to preserve durability.
+A separate [returned repository review](https://github.com/ashfulcra/unblock-any-agent/pull/4#discussion_r4298119192) identified a revoked selected connection starving later healthy selections. A two-connection regression failed before the fix. Connection-specific reconciliation failures now retain that connection’s pending state and profile while permitting fresh verified healthy selections to renew. Owner/source failures still stop the whole tick; storage errors also remain fatal to preserve durability. An actual deployed two-connection probe then confirmed revoked-first profile retention, healthy-second renewal and explicit partial-failure status; all dedicated grants were revoked and read back.
 
 ## Validation and remaining limits
 
