@@ -121,6 +121,17 @@ class Renewal:
             if len(current)!=1 or current[0].get('revoked') or self._scope(current[0])!=scope:raise DomainError('operator_latest_grant_missing_or_revoked',403)
         return scope
 
+    def _retire_expired(self,state,entry,grant,path):
+        pending=entry['pending']
+        # A visible expired renewal remains in the ancestry even if never published.
+        entry['latest']={k:grant[k] for k in ('grant_id','record_id','expires_at')}
+        # A crash may have published this exact candidate before updating the ledger.
+        # Reconcile it without rewriting an expired credential or accepting file drift.
+        if pending.get('profile') and path.exists() and private_read(path)==pending['profile']:
+            entry['profile_hash']=file_hash(path)
+        entry.setdefault('expired_visible',[]).append({'body':pending['body'],'record_id':grant['record_id']})
+        del entry['pending'];self._save(state)
+
     def tick(self):
         state={};result={'checked':True,'renewed':0,'pending':0,'unchanged':0,'errors':[]}
         try:
@@ -149,8 +160,8 @@ class Renewal:
                         if len(visible)>1:raise DomainError('operator_expired_intent_ambiguous_reconcile',409)
                         if visible:
                             grant=visible[0]
-                            if grant.get('revoked') or grant['expires_at']!=body['expires_at'] or self._scope(grant)!=scope:raise DomainError('operator_expired_intent_changed_or_revoked',403)
-                            entry.setdefault('expired_visible',[]).append({'body':body,'record_id':grant['record_id']});del entry['pending'];self._save(state)
+                            if grant.get('revoked') or grant['expires_at']!=body['expires_at'] or grant.get('renewal_of')!=body['renewal_of'] or self._scope(grant)!=scope:raise DomainError('operator_expired_intent_changed_or_revoked',403)
+                            self._retire_expired(state,entry,grant,path)
                         result['pending']+=1
                         result['errors'].append({'anchor_grant_id':anchor,'code':'expired_intent_read_back_next_tick' if visible else 'expired_intent_pending_readback','repair':'Retain the exact expired intent until native readback verifies it. Only a verified expired record permits a new intent on a later tick.'})
                         continue
@@ -162,9 +173,9 @@ class Renewal:
                     if not visible:
                         result['pending']+=1;continue
                     grant=visible[0];body=pending['body']
-                    if grant.get('revoked') or grant['grant_id']!=response['grant_id'] or grant['intent_id']!=body['intent_id'] or grant['expires_at']!=body['expires_at'] or self._scope(grant)!=scope:raise DomainError('operator_enrollment_readback_mismatch',403)
+                    if grant.get('revoked') or grant['grant_id']!=response['grant_id'] or grant['intent_id']!=body['intent_id'] or grant['expires_at']!=body['expires_at'] or grant.get('renewal_of')!=body['renewal_of'] or self._scope(grant)!=scope:raise DomainError('operator_enrollment_readback_mismatch',403)
                     if grant['expires_at']<=self.now():
-                        entry.setdefault('expired_visible',[]).append({'body':body,'record_id':grant['record_id']});del entry['pending'];self._save(state)
+                        self._retire_expired(state,entry,grant,path)
                         result['pending']+=1;continue
                     desired={'transport':'fulcra-native','url':self.config['url'],'token':response['credential'],'expires_at':grant['expires_at'],'grant_id':grant['grant_id']}
                     # Preserve the exact candidate across a crash after publication.

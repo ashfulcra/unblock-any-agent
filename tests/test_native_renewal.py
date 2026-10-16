@@ -81,6 +81,29 @@ class NativeRenewalTests(unittest.TestCase):
         retry=self.renewal().tick();self.assertTrue(retry['checked']);self.assertNotEqual(self.owner.calls[-1]['intent_id'],first['intent_id']);self.assertGreater(self.owner.calls[-1]['expires_at'],self.owner.clock)
         state=private_read(self.state);self.assertEqual(state['entries'][ANCHOR]['expired_visible'][0]['body'],first)
 
+    def test_expired_visible_renewal_remains_the_predecessor_and_revocation_stops_it(self):
+        self.owner.lose=True;self.renewal().tick();self.owner.publish();self.owner.clock+=70
+        self.assertTrue(self.renewal().tick()['checked'])
+        preceding=self.owner.accepted[0]
+        self.assertEqual(private_read(self.state)['entries'][ANCHOR]['latest']['grant_id'],preceding['grant_id'])
+        self.renewal().tick()
+        self.assertEqual(self.owner.calls[-1]['renewal_of'],preceding['grant_id'])
+        preceding['revoked']=True
+        before=len(self.owner.calls);self.assertFalse(self.renewal().tick()['checked']);self.assertEqual(len(self.owner.calls),before)
+
+    def test_expired_restart_after_profile_publication_reconciles_without_rewriting(self):
+        self.renewal().tick();self.owner.publish()
+        def interrupted(path,value):
+            replace_private(path,value)
+            if Path(path)==self.profile:raise OSError('Simulated process loss after atomic profile publication')
+        with patch('unblock.native_renewal.replace_private',side_effect=interrupted):self.assertFalse(self.renewal().tick()['checked'])
+        profile=private_read(self.profile);stamp=self.profile.stat().st_mtime_ns;self.owner.clock+=70
+        self.assertTrue(self.renewal().tick()['checked'])
+        self.assertEqual(private_read(self.profile),profile);self.assertEqual(self.profile.stat().st_mtime_ns,stamp)
+        result=self.renewal().tick();self.assertTrue(result['checked']);self.assertEqual(result['pending'],1)
+        self.assertEqual(self.owner.calls[-1]['renewal_of'],profile['grant_id'])
+        self.owner.publish();self.assertEqual(self.renewal().tick()['renewed'],1)
+
     def test_anchor_or_latest_revocation_stops_renewal_without_reenrolling(self):
         self.owner.grants[0]['revoked']=True;self.assertFalse(self.renewal().tick()['checked']);self.assertEqual(self.owner.calls,[])
         self.owner.grants[0]['revoked']=False;self.make_visible();profile=private_read(self.profile);before=len(self.owner.calls)
