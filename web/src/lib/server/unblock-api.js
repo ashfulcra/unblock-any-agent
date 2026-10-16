@@ -74,7 +74,7 @@ export function createService(config) {
         const request_id=text(body,'request_id',100),request=requests.find(r=>r.id===request_id && allowed(r));
         if (!request) throw new Error('Request not permitted');
         const revision=text(body,'revision',100),answers=body.answers;
-        if (!request.history.some((/** @type {any} */ r)=>r.id===revision) || !Array.isArray(answers) || answers.length>100 || new Set(answers).size!==answers.length || answers.some(a=>![...request.answers,...request.stale_answers].some(r=>r.id===a && r.payload.revision===revision))) throw new Error('Invalid delivery snapshot');
+        if (!request.history.some((/** @type {any} */ r)=>r.id===revision) || !Array.isArray(answers) || new Set(answers).size!==answers.length || answers.some(a=>![...request.answers,...request.stale_answers].some(r=>r.id===a && r.payload.revision===revision))) throw new Error('Invalid delivery snapshot');
         const disposition=text(body,'disposition',30);
         if (!['queued','failed','blocked','unknown'].includes(disposition)) throw new Error('Delivery cannot assert agent progress');
         return publish(token,{schema:'unblock/1',intent_id:text(body,'intent_id',160),kind:'delivery',request_id,agent_id:request.agent_id,payload:{revision,answers:[...answers].sort(),receiver:principal.id,environment:principal.environment,disposition,evidence:text(body,'evidence',16000)}});

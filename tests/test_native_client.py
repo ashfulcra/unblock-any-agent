@@ -45,6 +45,10 @@ class NativeClientTests(unittest.TestCase):
         with self.assertRaises(ValueError):client.call('attention?url=https://foreign.invalid')
         with self.assertRaises(ValueError):client.call('recover',{'request_id':'not-a-uuid'})
 
+    def test_oversized_receipt_is_a_definite_rejection_before_network(self):
+        with self.assertRaises(DomainError) as error:self.client.call('delivery',{'answers':['answer']*10000})
+        self.assertEqual(error.exception.status,413);self.assertEqual(error.exception.code,'native_operation_rejected');self.assertEqual(self.seen,[])
+
     def test_redirect_cannot_forward_credential_and_failed_source_cannot_be_quiet(self):
         received=[]
         class Foreign(BaseHTTPRequestHandler):

@@ -38,6 +38,21 @@ class NativeWorkerTests(unittest.TestCase):
             client=WorkerClient();mutate(client.row)
             with self.assertRaises(ValueError):run_worker(client,self.rid,self.root,poll_attempts=1)
             self.assertEqual(list(self.root.iterdir()),[])
+    def test_changed_approval_or_uncertain_action_during_readback_stops_before_effect(self):
+        for change in ('revision','answer','uncertain'):
+            client=WorkerClient();original=client.call
+            def call(operation,data=None):
+                result=original(operation,data)
+                if operation=='action':
+                    if change=='revision':client.row['revisions'][0]['id']='new-revision'
+                    if change=='answer':client.row['answers'].append({'id':'new-answer','payload':{'answer':'Do not write'}})
+                    if change=='uncertain':client.row['uncertain_actions'].append({'id':'foreign'})
+                return result
+            client.call=call
+            with self.assertRaises(ValueError):run_worker(client,self.rid,self.root,poll_attempts=1)
+            self.assertEqual(list(self.root.iterdir()),[],change+' changed during intent readback')
+            self.assertFalse(any(op=='settle' or (op=='progress' and body['stage']=='resumed') for op,body in client.calls))
+
     def test_pending_action_has_no_effect_and_bad_existing_artifact_is_not_overwritten(self):
         self.client.pending=True
         with self.assertRaises(ValueError):run_worker(self.client,self.rid,self.root,poll_attempts=1)

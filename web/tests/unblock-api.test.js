@@ -121,3 +121,15 @@ test('malformed native source is sanitized as unavailable rather than user input
  const f=fixture();f.corrupt('private-source-fragment');
  await assert.rejects(()=>f.service.handle('attention',{cookieToken:f.token}),error=>error instanceof Error && error.message.includes('unavailable') && !error.message.includes('private-source-fragment'));
 });
+
+test('delivery supports a complete retained answer set beyond one hundred',async()=>{
+ const f=fixture(),owner=(/** @type {string} */ op,/** @type {any} */ body)=>f.service.handle(op,{cookieToken:f.token,body});
+ const a=await owner('enroll',{intent_id:'agent-large-set',agent_id:'alpha',name:'Alpha'});f.publish();
+ const request=await f.service.handle('request',{token:a.credential,body:need});f.publish();
+ for(let i=0;i<101;i++)await owner('answer',{intent_id:'answer-'+i,request_id:request.request_id,revision:request.record_id,answer:'Retained decision '+i});
+ f.publish();
+ const listener=await owner('enroll',{intent_id:'listener-large-set',agent_id:'listener',name:'Listener',kind:'listener',environment:'env',agent_ids:['alpha']});f.publish();
+ const work=(await owner('attention',{})).requests[0];assert.equal(work.answers.length,101);
+ await f.service.handle('delivery',{token:listener.credential,body:{intent_id:'large-set-delivery',request_id:request.request_id,revision:request.record_id,answers:work.answers.map((/** @type {any} */ a)=>a.id),disposition:'queued',evidence:'Route observation only'}});f.publish();
+ const observed=(await owner('attention',{})).requests[0];assert.equal(observed.deliveries.length,1);assert.equal(observed.progress.length,0);
+});

@@ -33,7 +33,8 @@ def run_worker(client,request_id,output,poll_attempts=12):
     artifact=Path(output).resolve()/f'{request_id}-{answer["id"]}.json'
     expected={'request_id':request_id,'revision':revision['id'],'answer_id':answer['id'],'context_sha256':digest(revision['payload']['context']),'marker':'blue','synthetic':True}
     key=digest([expected,str(artifact)]);action_intent='synthetic-action:'+key
-    existing=[a for a in row['actions'] if a['intent_id']==action_intent]
+    effect='Write and verify only the private synthetic blue marker '+str(artifact)
+    existing=[a for a in row['actions'] if a['intent_id']==action_intent and a['payload'].get('effect')==effect]
     if any(a['id'] not in {e['id'] for e in existing} for a in row['uncertain_actions']):raise ValueError('Unrelated uncertain action requires reconciliation')
     def publish(operation,body,field):
         receipt=client.call(operation,body)
@@ -43,7 +44,8 @@ def run_worker(client,request_id,output,poll_attempts=12):
             if attempt+1<poll_attempts:time.sleep(1)
         raise ValueError('Native write pending readback; retain intent before continuing')
     # Declare and read back the exact idempotent private-file effect before touching it.
-    action,_=publish('action',{'intent_id':action_intent,'request_id':request_id,'effect':'Write and verify only the private synthetic blue marker '+str(artifact)},'actions')
+    action,current=publish('action',{'intent_id':action_intent,'request_id':request_id,'effect':effect},'actions')
+    if len(current['revisions'])!=1 or current['revisions'][0]['id']!=revision['id'] or len(current['answers'])!=1 or current['answers'][0]['id']!=answer['id'] or current['answers'][0]['payload']['answer']!=APPROVAL or any(a['id']!=action['record_id'] for a in current['uncertain_actions']):raise ValueError('Approval or uncertain actions changed during intent readback; reconcile before effects')
     if not artifact.exists():
         try:private_write(artifact,expected)
         except FileExistsError:pass

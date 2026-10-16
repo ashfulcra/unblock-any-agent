@@ -42,7 +42,7 @@ class NativeClient:
         else:
             if not isinstance(data,dict):raise ValueError('Native writes require a JSON object')
             body=json.dumps(data).encode()
-            if len(body)>65536:raise ValueError('Native write exceeds request limit')
+            if len(body)>65536:raise DomainError('native_operation_rejected',413)
         request=urllib.request.Request(self.url+path,data=body,method='GET' if operation in READ else 'POST',headers={'Authorization':'Bearer '+self.token,'Content-Type':'application/json'})
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self,*_):return None

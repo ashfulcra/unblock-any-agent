@@ -18,6 +18,7 @@ REV='00000000-0000-4000-8000-000000000002'
 ANSWER='00000000-0000-4000-8000-000000000003'
 
 class FixtureClient:
+    url="https://dashboard-a.invalid"
     def __init__(self,path):
         self.path=path;self.fail=False;self.receipts=[];self.fail_code=503;self.fail_receipt=False
         self.identity={'kind':'listener','id':'receiver','environment':'here','agent_ids':['alpha']}
@@ -79,6 +80,28 @@ class NativeListenerTests(unittest.TestCase):
                 self.assertEqual(launched,[RID],f'{status} at {boundary} must stop all subsequent launches')
                 self.assertFalse(result['checked']);self.assertEqual(result['pending_known'],2)
                 with listener.ledger() as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM receipt_outbox').fetchone()[0],1)
+
+    def test_source_origin_change_preserves_old_ledger_and_does_not_dispatch(self):
+        self.answer();first=self.listener();first.tick()
+        with first.ledger() as db:before=db.execute('SELECT * FROM attempts').fetchall()
+        self.client.url='https://dashboard-b.invalid'
+        with self.assertRaises(ValueError):self.listener().tick()
+        with first.ledger() as db:self.assertEqual(db.execute('SELECT * FROM attempts').fetchall(),before)
+
+    def test_rejected_receipt_is_retained_without_blocking_unrelated_work(self):
+        self.answer();listener=self.listener();original=self.client.call;receipt_status=503
+        def call(operation,data=None):
+            if operation=='delivery' and data['intent_id']=='poisoned':raise DomainError('native_operation_rejected',receipt_status)
+            return original(operation,data)
+        self.client.call=call
+        body={'intent_id':'poisoned','request_id':RID,'revision':REV,'answers':[ANSWER],'disposition':'queued','evidence':'A rejected receipt may have an earlier uncertain attempt'}
+        with listener.ledger() as db:db.execute('INSERT INTO receipt_outbox VALUES (?,?)',('poisoned',json.dumps(body)))
+        self.assertFalse(listener.tick()['checked'])
+        receipt_status=400
+        result=listener.tick();self.assertTrue(result['checked']);self.assertEqual(result['attempts'][0]['result'],'queued')
+        self.assertEqual(result['receipts_rejected'],1);self.assertTrue(result['receipt_errors'])
+        with listener.ledger() as db:self.assertEqual(json.loads(db.execute('SELECT body FROM receipt_rejected').fetchone()[0]),body)
+        self.assertTrue(listener.tick()['checked'])
 
     def test_acknowledged_without_continuation_does_not_suppress_all_future_pickup(self):
         self.answer();listener=self.listener()

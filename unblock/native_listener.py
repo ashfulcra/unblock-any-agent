@@ -21,13 +21,15 @@ class NativeListener(Listener):
             db.executescript('''CREATE TABLE IF NOT EXISTS binding (singleton INTEGER PRIMARY KEY CHECK(singleton=1), identity TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS native_attempts (delivery_key TEXT PRIMARY KEY, count INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS receipt_outbox (intent_id TEXT PRIMARY KEY, body TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS receipt_confirmed (intent_id TEXT PRIMARY KEY);''')
+                CREATE TABLE IF NOT EXISTS receipt_confirmed (intent_id TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS receipt_rejected (intent_id TEXT PRIMARY KEY, body TEXT NOT NULL, status INTEGER NOT NULL);''')
 
     def _identity(self):
         me=self.client.call('identity')
         if me.get('kind')!='listener' or me.get('environment')!=self.environment or not me.get('id') or not isinstance(me.get('agent_ids'),list) or not me['agent_ids']:
             raise ValueError('Listener credential does not match this environment or explicit agent set')
-        binding=json.dumps({**me,'agent_ids':sorted(me['agent_ids'])},sort_keys=True)
+        if not isinstance(getattr(self.client,'url',None),str):raise ValueError('Listener source origin is required')
+        binding=json.dumps({'origin':self.client.url,'principal':{**me,'agent_ids':sorted(me['agent_ids'])}},sort_keys=True)
         with self.ledger() as db:
             db.execute('BEGIN IMMEDIATE')
             prior=db.execute('SELECT identity FROM binding WHERE singleton=1').fetchone()
@@ -48,7 +50,15 @@ class NativeListener(Listener):
     def _flush(self):
         with self.ledger() as db:pending=db.execute('SELECT intent_id,body FROM receipt_outbox').fetchall()
         for intent,body in pending:
-            result=self.client.call('delivery',json.loads(body))
+            try:result=self.client.call('delivery',json.loads(body))
+            except DomainError as error:
+                if error.status not in (400,413,415,422):raise
+                # Preserve the full body, including any earlier uncertain
+                # attempt. A later rejection does not prove non-publication.
+                with self.ledger() as db:
+                    db.execute('INSERT OR IGNORE INTO receipt_rejected VALUES (?,?,?)',(intent,body,error.status))
+                    db.execute('DELETE FROM receipt_outbox WHERE intent_id=?',(intent,))
+                continue
             if result.get('visibility')=='visible':
                 with self.ledger() as db:
                     db.execute('INSERT OR IGNORE INTO receipt_confirmed VALUES (?)',(intent,))
@@ -57,7 +67,7 @@ class NativeListener(Listener):
     def _receipt(self,item,revision,answers,disposition,evidence,intent,defer=False):
         body={'intent_id':intent,'request_id':item['id'],'revision':revision,'answers':answers,'disposition':disposition,'evidence':evidence}
         with self.ledger() as db:
-            if db.execute('SELECT 1 FROM receipt_confirmed WHERE intent_id=?',(intent,)).fetchone():return True
+            if db.execute('SELECT 1 FROM receipt_confirmed WHERE intent_id=?',(intent,)).fetchone() or db.execute('SELECT 1 FROM receipt_rejected WHERE intent_id=?',(intent,)).fetchone():return True
             db.execute('INSERT OR IGNORE INTO receipt_outbox VALUES (?,?)',(intent,json.dumps(body,sort_keys=True)))
         if defer:return False
         try:self._flush();return True
@@ -155,7 +165,11 @@ class NativeListener(Listener):
             revision=item['revisions'][0]['id'];answers=sorted(a['id'] for a in item['answers'])
             intent='gap:'+hashlib.sha256(json.dumps([item['id'],revision,answers,error['code'],routes.get(item['agent_id'])],sort_keys=True).encode()).hexdigest()
             if not self._receipt(item,revision,answers,'blocked',repairs[error['code']],intent):source_failed=True
-        with self.ledger() as db:result['receipts_pending']=db.execute('SELECT COUNT(*) FROM receipt_outbox').fetchone()[0]
+        with self.ledger() as db:
+            result['receipts_pending']=db.execute('SELECT COUNT(*) FROM receipt_outbox').fetchone()[0]
+            rejected=db.execute('SELECT body,status FROM receipt_rejected').fetchall()
+        result['receipts_rejected']=len(rejected)
+        result['receipt_errors']=[{'request_id':json.loads(body)['request_id'],'status':status,'repair':'Inspect native history and reconcile the retained rejected receipt. Any earlier publication remains uncertain; other authorized work may continue.'} for body,status in rejected]
         return self._unknown(result) if source_failed else result
 
 
