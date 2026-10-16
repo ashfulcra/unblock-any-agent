@@ -245,6 +245,12 @@ class Store:
                     work.append(self._work(db,row))
             return work
 
+    def get_recent(self, actor):
+        with self.transaction() as db:
+            self._live(db,actor,'owner')
+            rows=db.execute('SELECT r.* FROM requests r JOIN workspaces w ON w.id=r.workspace_id WHERE w.owner_id=? AND r.status IN (?,?) ORDER BY r.created DESC LIMIT 50',(actor.id,'resumed','completed')).fetchall()
+            return [self._work(db,row) for row in rows]
+
     def report_progress(self, actor, request_id, response_id, state, evidence):
         evidence=text(evidence)
         if state not in ('acknowledged','resumed','completed','blocked'):
