@@ -90,7 +90,8 @@ export function createNativeMcp({service,origin}) {
     response.headers.set('Cache-Control','no-store');return response;
    } catch(error) {
     const message=/** @type {Error} */(error).message || '';
-    const source=/unavailable|unverified|integrity|not configured|Unexpected native/i.test(message);
+    const authentication=/Authentication|credential|Agent enrollment/i.test(message);
+    const source=!authentication && /unavailable|unverified|integrity|not configured|Unexpected native/i.test(message);
     return reject(source?'source_unavailable_work_remains_pending':'native_enrollment_expired_or_revoked',source?503:401);
    }
   }
