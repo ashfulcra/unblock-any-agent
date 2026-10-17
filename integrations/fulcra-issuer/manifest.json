@@ -5,25 +5,25 @@
   },
   "patch": {
     "file": "unblock.patch",
-    "sha256": "edc5b7ffc93946d8f2f5fdf405696ca5ead05f0ad7282f7c684705ff8e9bb892"
+    "sha256": "f2e82dfeb664f802f1280a5e41dd14abfb173e6d9c9f1d50c2ace9cc2554667a"
   },
   "result_files_sha256": {
     "README.md": "69cb2a5112c0d4012b5646d7dfe7f71d2f867f36777477db06c06c703b1b835b",
-    "docs/unblock-issuer.md": "5a889c158d2e25efc8a424021d8755d9b541953ed812cee61450a6a297f9ed0e",
+    "docs/unblock-issuer.md": "1213ccba3344c5808f7db8d89d60cfdc2fdd126acf96ce4f137a95cab4ec1e12",
     "fulcra_mcp/main.py": "72395f201bcb9ce8b7815903b1befc9171742599339f23e57ceb564618401c10",
     "fulcra_mcp/settings.py": "6eec64fc43ade27ea194b572384d758026f6bcfc881ee934df46b45a7e851336",
-    "fulcra_mcp/unblock_bridge.py": "c6b8ebfd75f00b08be3d4c3c7da8fd7b5edb2ab48a36b57cfb8411a5801b846e",
+    "fulcra_mcp/unblock_bridge.py": "dceb84adff4b2f34043f3d5e0c9316d404a2b285b7e65c59c99c3abfb6588844",
     "fulcra_mcp/unblock_consent.py": "9612f568f9ab8b45b9085107556d2c9603d1595f88dfb16e8eba11906146403b",
-    "fulcra_mcp/unblock_operator.py": "20a1adbffecfee72b1ac547747766ed20b747358e73a73f3de01a7d85290d68a",
+    "fulcra_mcp/unblock_operator.py": "80612221e54e972cfd71dd7f17c37c38e87c72a76ded6e7282069263a8595235",
     "fulcra_mcp/unblock_ops_report.py": "615740a875133d7737c43c4de910593bb7362008c66bfc728b27bef326c9ec27",
     "fulcra_mcp/unblock_owner.py": "1508fbf83c94c34914096c349f4dd548e2ebbbbfad6639ecfa924c7d3ac18504",
     "fulcra_mcp/unblock_probe.py": "aa695019cf20d90b75b979ec14add5abb0f99fbdab3f7d46f7263e38ece652cf",
-    "fulcra_mcp/unblock_provider.py": "01f58b7421bd2baf92bbc83b2b180486777a864c6c863f7592cf2383f5732013",
+    "fulcra_mcp/unblock_provider.py": "3ba11ed67edc29019073b20ba49b9937d911f584924f535458923f60b9008be0",
     "fulcra_mcp/unblock_resource.py": "c6870c6db06a752ed1033941ee7e1375f1b38685aacee35b7ca6d42fc778b513",
     "fulcra_mcp/unblock_state.py": "99c94fb5b28e008693fd045fa9365d9da7917bedded3be501930fb0a204dd421",
     "tests/test_unblock_bridge.py": "48aff0097505920701e90ec966330ddb1c226129dd6e2e9688d4ae9b06d5a40c",
     "tests/test_unblock_consent.py": "eb5457b0e8045880febacb37b32e114f8fdafe0b0394e0b57c83f319da91254b",
-    "tests/test_unblock_operator.py": "b83eadb193c9011bb0806aeef399a486477c650512e288cd0e93ea8cbc70dbc3",
+    "tests/test_unblock_operator.py": "3711164a77cf5d7d36c2bb63d405b3cdd485997a720da29b6e2d2036f2a8d474",
     "tests/test_unblock_ops_report.py": "15d60eb4ca17f87cce84e6db87e83d1cbfb137ea5c9aa84062b5bc7069fc1517",
     "tests/test_unblock_owner.py": "cc36cd81b3808f47df91e94e595fea5d968e553bb4e65666aba367c193cd198d",
     "tests/test_unblock_probe.py": "5034b4223631ccfab51a4f6df44d4f620f2762079105db3dc03912537d1badc9",
@@ -31,9 +31,9 @@
     "tests/test_unblock_resource.py": "0680433e8735b1b2f1f454d722325cfd3f2cca82b2885046419c4fc72c83bdfb",
     "tests/test_unblock_state.py": "7f6b16baa622bed55a861d69d5ed6768b4fef8eb4921fb2597e10e4934e80aed"
   },
-  "status": "reviewed source candidate with bounded storage probe and explicit pending-revocation operations; disabled; actual GCS/issuer/ChatGPT acceptance pending",
+  "status": "source candidate with bounded storage probe and explicit pending-revocation operations; disabled; actual GCS/issuer/ChatGPT acceptance pending",
   "source_tests": {
-    "passed": 510,
+    "passed": 642,
     "existing_skipped": 16,
     "existing_xfailed": 5,
     "existing_warnings": 1
@@ -56,7 +56,7 @@
       "3.13.13",
       "3.14.7"
     ],
-    "full_suite_each": "510 passed,16 inherited skips,5 inherited xfails,1 inherited warning",
+    "full_suite_each": "642 passed,16 inherited skips,5 inherited xfails,1 inherited warning",
     "python_314_note": "expanded source checkout; Python3.13 fresh clean apply; CI repeats both"
   },
   "operations_review": {
@@ -75,5 +75,16 @@
     "corrected_source_commit": "d95953485404fe324194e3f12388222b8da703b9",
     "new_regression_cases": 40,
     "initial_failures": 38
+  },
+  "returned_intent_review": {
+    "source": "https://github.com/ashfulcra/unblock-any-agent/pull/16#discussion_r4300413530",
+    "priority": "P1",
+    "important_found": 1,
+    "important_fixed": 1,
+    "corrected_source_commit": "ca3deb73c42b13e97225ce37d2ce804ada62bdf0",
+    "new_regression_cases": 132,
+    "initial_failures": 129,
+    "shared_structural_validation": true,
+    "fresh_provider_recovery_guard": true
   }
 }

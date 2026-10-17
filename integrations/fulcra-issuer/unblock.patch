@@ -12,7 +12,7 @@ index bddd5a0..32d6f0f 100644
 +The disabled-by-default [Unblock issuer candidate](docs/unblock-issuer.md) adds explicit worker consent using the existing Fulcra callback and configuration. Source tests and native bridge evidence are separate from live issuer and ChatGPT web acceptance.
 diff --git a/docs/unblock-issuer.md b/docs/unblock-issuer.md
 new file mode 100644
-index 0000000..dac33f3
+index 0000000..edc274a
 --- /dev/null
 +++ b/docs/unblock-issuer.md
 @@ -0,0 +1,74 @@
@@ -85,7 +85,7 @@ index 0000000..dac33f3
 +  --report /PRIVATE/new-pending-inspection.json
 +```
 +
-+Inspection is read-only by default. It emits only allowlisted state/action labels and hashed keys; raw records, owner references, subjects, requester text and credentials are excluded. Source failure or missing/mismatched state is unresolved, never an empty queue. Keep earlier reports as continuity evidence. A completed root is checked only when its required native receipt, replacement refresh token, response timing and publication references are present, well typed and internally consistent. This validates retained publication structure; it does not prove that a lease is still live or that every referenced remote object is reachable. Malformed completed state remains unresolved before any recovery effect.
++Inspection is read-only by default. It emits only allowlisted state/action labels and hashed keys; raw records, owner references, subjects, requester text and credentials are excluded. Source failure or missing/mismatched state is unresolved, never an empty queue. Keep earlier reports as continuity evidence. A completed root is checked only when its required native receipt, replacement refresh token, response timing and publication references are present, well typed and internally consistent. This validates retained publication structure; it does not prove that a lease is still live or that every referenced remote object is reachable. The saved initial enrollment intent must contain the exact native schema and match the saved approved worker/project. Its renewal reference must be null for a code root. Bridge and operator use shared structural validation; provider recovery checks it again on its fresh source read. Missing or mismatched saved authority remains unresolved before any cleanup effect, including for claimed/uncertain records with receipts. Neither structural check requires a currently live worker lease.
 +
 +For a root that already has `revocation_requested=true`, add `--recover-revocations` with a new report path. The report freezes the requested keys/resource before effects. The provider rechecks that exact resource before its existing source-checked cleanup. It cannot authorize a new revocation, resume token issuance, allocate a fresh enrollment intent or take over an unknown upstream refresh. A false/failed cleanup remains pending; only source-verified cleanup is reported as verified.
 +
@@ -146,10 +146,10 @@ index 4418019..69f14d7 100644
      port: int = 4499
 diff --git a/fulcra_mcp/unblock_bridge.py b/fulcra_mcp/unblock_bridge.py
 new file mode 100644
-index 0000000..09b1e72
+index 0000000..d509521
 --- /dev/null
 +++ b/fulcra_mcp/unblock_bridge.py
-@@ -0,0 +1,387 @@
+@@ -0,0 +1,398 @@
 +"""Verified owner/deployment bridge to the existing native worker service."""
 +
 +from dataclasses import dataclass, field
@@ -208,6 +208,44 @@ index 0000000..09b1e72
 +    ):
 +        raise BridgeRejected("unsupported canonical deployment domain")
 +    return "https://" + domain
++
++
++def validate_saved_project(binding):
++    """Pure structure check; ownership/liveness still require live revalidation."""
++    if (
++        not isinstance(binding.subject, str) or not 0 < len(binding.subject) <= 200
++        or _uuid(binding.project_id) != binding.project_id
++        or binding.origin != _origin(urlsplit(binding.resource).hostname or "")
++        or binding.resource != binding.origin + "/mcp"
++        or not isinstance(binding.agent, str)
++        or re.fullmatch(r"[a-z0-9][a-z0-9-]{0,99}", binding.agent) is None
++        or not isinstance(binding.environment, str)
++        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", binding.environment) is None
++        or not isinstance(binding.name, str) or not binding.name.strip()
++        or len(binding.name) > 100
++    ):
++        raise BridgeRejected("invalid saved worker binding")
++
++
++def validate_saved_intent(binding, intent):
++    """Use the exact native intent schema without requiring its lease to be live."""
++    validate_saved_project(binding)
++    if (
++        not isinstance(intent, dict)
++        or set(intent) != {
++            "intent_id", "agent_id", "name", "kind", "environment", "expires_at", "renewal_of"
++        }
++        or intent["agent_id"] != binding.agent
++        or intent["name"] != binding.name
++        or intent["kind"] != "agent"
++        or intent["environment"] != binding.environment
++        or not isinstance(intent["intent_id"], str)
++        or not intent["intent_id"].strip() or len(intent["intent_id"]) > 160
++        or type(intent["expires_at"]) is not int or intent["expires_at"] <= 0
++    ):
++        raise BridgeRejected("invalid saved enrollment intent")
++    if intent["renewal_of"] is not None and _uuid(intent["renewal_of"]) != intent["renewal_of"]:
++        raise BridgeRejected("renewal reference changed")
 +
 +
 +class NativeBridge:
@@ -376,36 +414,9 @@ index 0000000..09b1e72
 +        }
 +
 +    def _intent(self, binding, owner, intent):
-+        if (
-+            not isinstance(intent, dict)
-+            or set(intent)
-+            != {
-+                "intent_id",
-+                "agent_id",
-+                "name",
-+                "kind",
-+                "environment",
-+                "expires_at",
-+                "renewal_of",
-+            }
-+            or intent.get("agent_id") != binding.agent
-+            or intent.get("name") != binding.name
-+            or intent.get("kind") != "agent"
-+            or intent.get("environment") != binding.environment
-+            or not isinstance(intent.get("intent_id"), str)
-+            or not intent["intent_id"].strip()
-+            or len(intent["intent_id"]) > 160
-+            or type(intent.get("expires_at")) is not int
-+            or not self.now()
-+            < intent["expires_at"]
-+            <= min(owner.expires_at, int(self.now()) + 3600)
-+        ):
++        validate_saved_intent(binding, intent)
++        if not self.now() < intent["expires_at"] <= min(owner.expires_at, int(self.now()) + 3600):
 +            raise BridgeRejected("enrollment intent changed or expired")
-+        if (
-+            intent["renewal_of"] is not None
-+            and _uuid(intent["renewal_of"]) != intent["renewal_of"]
-+        ):
-+            raise BridgeRejected("renewal reference changed")
 +
 +    async def _receipt(self, binding, response, intent):
 +        try:
@@ -899,7 +910,7 @@ index 0000000..fcf052f
 +        return None
 diff --git a/fulcra_mcp/unblock_operator.py b/fulcra_mcp/unblock_operator.py
 new file mode 100644
-index 0000000..d8a9388
+index 0000000..a74e1a3
 --- /dev/null
 +++ b/fulcra_mcp/unblock_operator.py
 @@ -0,0 +1,213 @@
@@ -918,7 +929,7 @@ index 0000000..d8a9388
 +from .settings import settings
 +from .unblock_bridge import NativeBridge, BridgeRejected, _origin, _uuid
 +from .unblock_owner import OwnerVault
-+from .unblock_provider import UnblockProvider
++from .unblock_provider import UnblockProvider, saved_root_enrollment_valid
 +from .unblock_state import configured_store, state_key
 +from .unblock_ops_report import write_report
 +
@@ -1014,7 +1025,7 @@ index 0000000..d8a9388
 +                    or type(row.get("expires_at")) is not int
 +                    or not isinstance(row.get("history"), list)
 +                    or not isinstance(row.get("checkpoints"), dict)
-+                    or row["binding"].get("root_code_key") != key
++                    or not saved_root_enrollment_valid(row, key)
 +                    or (
 +                        row.get("status") == "completed"
 +                        and not completed_publication_valid(row)
@@ -1689,10 +1700,10 @@ index 0000000..0f8e2dd
 +    raise SystemExit(main())
 diff --git a/fulcra_mcp/unblock_provider.py b/fulcra_mcp/unblock_provider.py
 new file mode 100644
-index 0000000..840d842
+index 0000000..c53632d
 --- /dev/null
 +++ b/fulcra_mcp/unblock_provider.py
-@@ -0,0 +1,863 @@
+@@ -0,0 +1,894 @@
 +"""An isolated, optional OAuth issuer branch for one approved native worker.
 +
 +This module neither mounts routes nor discovers credentials at import. The
@@ -1730,6 +1741,8 @@ index 0000000..840d842
 +    NativeGrantReceipt,
 +    BridgeRejected,
 +    BridgeUnavailable,
++    validate_saved_project,
++    validate_saved_intent,
 +)
 +from .unblock_owner import OWNER_SESSION_SECONDS
 +from .unblock_state import Transactions, StateConflict, state_key
@@ -1738,6 +1751,35 @@ index 0000000..840d842
 +LOGIN_SECONDS = 600
 +CODE_SECONDS = 120
 +REFRESH_RETRY_SECONDS = 120
++
++
++def saved_root_enrollment_valid(row, root):
++    """Check retained initial enrollment authority before inspection or cleanup.
++
++    Pending roots may precede an enrollment intent. A receipt or completed
++    publication can never precede it. Refresh enrollment intents belong to
++    separate refresh records and must not replace an initial code's intent.
++    """
++    try:
++        binding, checkpoints = row["binding"], row["checkpoints"]
++        project = ProjectBinding(**binding["project"])
++        validate_saved_project(project)
++        if (
++            binding["root_code_key"] != root or project.resource != binding["resource"]
++            or not isinstance(binding["owner_key"], str)
++            or re.fullmatch(r"owner/[a-f0-9]{64}", binding["owner_key"]) is None
++            or type(binding["session_expires_at"]) is not int
++            or binding["session_expires_at"] <= 0
++            or not isinstance(checkpoints, dict)
++        ):
++            return False
++        if "native_intent" not in checkpoints:
++            return row["status"] != "completed" and "native_receipt" not in checkpoints
++        intent = checkpoints["native_intent"]
++        validate_saved_intent(project, intent)
++        return intent["renewal_of"] is None and intent["expires_at"] <= binding["session_expires_at"]
++    except (KeyError, TypeError, ValueError, AttributeError, BridgeRejected):
++        return False
 +
 +
 +class ResourceRefreshToken(RefreshToken):
@@ -2492,7 +2534,7 @@ index 0000000..840d842
 +            and row["binding"].get("resource") != expected_resource
 +        ):
 +            return False
-+        if not row.get("revocation_requested"):
++        if not row.get("revocation_requested") or not saved_root_enrollment_valid(row, root):
 +            return False
 +        binding, checkpoints = row["binding"], row.get("checkpoints", {})
 +        cleanup_key = state_key("revoke", root)
@@ -3584,10 +3626,10 @@ index 0000000..0243889
 +        assert not bridge.revoked
 diff --git a/tests/test_unblock_operator.py b/tests/test_unblock_operator.py
 new file mode 100644
-index 0000000..06b477f
+index 0000000..12e0c0c
 --- /dev/null
 +++ b/tests/test_unblock_operator.py
-@@ -0,0 +1,233 @@
+@@ -0,0 +1,332 @@
 +"""Operator observations/recovery use real provider state, not owner token output."""
 +
 +import json
@@ -3820,6 +3862,105 @@ index 0000000..06b477f
 +        "--resource", RESOURCE_A, "--code-key", key, "--report", str(path)
 +    ]) == 1
 +    assert json.loads(path.read_text())["status"] == "unresolved"
++    assert not context[2].revoked
++
++
++# Frozen initial-code intent schema and its approved worker binding. These
++# corruptions must never become authority for either a clean check or cleanup.
++INTENT_CORRUPTIONS = (
++    [("truncate_intent", None)]
++    + [("delete_intent", key) for key in [
++        "intent_id", "agent_id", "name", "kind", "environment", "expires_at", "renewal_of"
++    ]]
++    + [("intent." + key, value) for key, value in [
++        ("intent_id", ""), ("intent_id", 7), ("intent_id", "x" * 161),
++        ("agent_id", "other-agent"), ("name", "Different worker"),
++        ("kind", "human"), ("environment", "other-env"),
++        ("renewal_of", "00000000-0000-0000-0000-000000000001"),
++        ("unexpected", "field"),
++    ]]
++    + [("delete_project", key) for key in [
++        "subject", "project_id", "origin", "resource", "agent", "environment", "name"
++    ]]
++    + [("project." + key, value) for key, value in [
++        ("subject", ""), ("project_id", "invalid"),
++        ("origin", "https://foreign.my.fulcra.ai"),
++        ("resource", RESOURCE_B), ("agent", "Invalid Agent"),
++        ("environment", "Invalid Env"), ("name", ""),
++    ]]
++    + [("owner_key", "owner/not-a-hash")]
++)
++
++
++@pytest.mark.parametrize("corruption,value", INTENT_CORRUPTIONS)
++@pytest.mark.parametrize("recover", [False, True])
++@pytest.mark.parametrize("status", ["completed", "uncertain"])
++async def test_saved_intent_and_worker_binding_fail_closed_before_recovery(
++    context, monkeypatch, corruption, value, recover, status
++):
++    key = await connected(context)
++    row, generation = context[1].read(key)
++    intent = row["checkpoints"]["native_intent"]
++    project = row["binding"]["project"]
++    if corruption == "truncate_intent":
++        row["checkpoints"]["native_intent"] = {"expires_at": intent["expires_at"]}
++    elif corruption == "delete_intent":
++        intent.pop(value)
++    elif corruption == "delete_project":
++        project.pop(value)
++    elif corruption.startswith("intent."):
++        intent[corruption.split(".")[1]] = value
++    elif corruption.startswith("project."):
++        field = corruption.split(".")[1]
++        project[field] = value
++        # A mutually agreeing malformed worker identifier remains invalid.
++        if field in ["agent", "environment", "name"]:
++            intent[{"agent": "agent_id"}.get(field, field)] = value
++    else:
++        row["binding"][corruption] = value
++    row.update(status=status, revocation_requested=recover)
++    context[1].replace(key, row, generation)
++
++    async def forbidden(*args, **kwargs):
++        pytest.fail("malformed saved intent reached recovery")
++
++    monkeypatch.setattr(context[4], "recover_pending_code", forbidden)
++    report = await inspect_keys(context[4], [key], RESOURCE_A, recover=recover)
++    assert report["status"] == "unresolved"
++    assert report["items"][0]["state"] == "source_unknown"
++    assert not context[2].revoked
++
++
++async def test_expired_complete_intent_can_reconcile_requested_revocation(context):
++    key = await connected(context)
++    await request_revoke(context, key)
++    context[0][0] += 101
++    report = await inspect_keys(context[4], [key], RESOURCE_A, recover=True)
++    assert report["status"] == "checked"
++    assert report["items"][0]["state"] == "revocation_verified"
++    assert context[2].revoked
++
++
++@pytest.mark.parametrize("recover", [False, True])
++async def test_saved_receipt_without_intent_stays_unresolved(context, recover):
++    key = await connected(context)
++    row, generation = context[1].read(key)
++    row["checkpoints"].pop("native_intent")
++    row.update(status="uncertain", revocation_requested=True)
++    context[1].replace(key, row, generation)
++    report = await inspect_keys(context[4], [key], RESOURCE_A, recover=recover)
++    assert report["status"] == "unresolved" and not context[2].revoked
++
++
++async def test_provider_direct_recovery_denies_truncated_initial_intent(context):
++    key = await connected(context)
++    row, generation = context[1].read(key)
++    row["checkpoints"]["native_intent"] = {
++        "expires_at": row["checkpoints"]["native_intent"]["expires_at"]
++    }
++    row["revocation_requested"] = True
++    context[1].replace(key, row, generation)
++    assert await context[4].recover_pending_code(key, expected_resource=RESOURCE_A) is False
 +    assert not context[2].revoked
 diff --git a/tests/test_unblock_ops_report.py b/tests/test_unblock_ops_report.py
 new file mode 100644
