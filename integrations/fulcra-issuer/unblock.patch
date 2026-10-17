@@ -12,7 +12,7 @@ index bddd5a0..32d6f0f 100644
 +The disabled-by-default [Unblock issuer candidate](docs/unblock-issuer.md) adds explicit worker consent using the existing Fulcra callback and configuration. Source tests and native bridge evidence are separate from live issuer and ChatGPT web acceptance.
 diff --git a/docs/unblock-issuer.md b/docs/unblock-issuer.md
 new file mode 100644
-index 0000000..a142908
+index 0000000..dac33f3
 --- /dev/null
 +++ b/docs/unblock-issuer.md
 @@ -0,0 +1,74 @@
@@ -85,7 +85,7 @@ index 0000000..a142908
 +  --report /PRIVATE/new-pending-inspection.json
 +```
 +
-+Inspection is read-only by default. It emits only allowlisted state/action labels and hashed keys; raw records, owner references, subjects, requester text and credentials are excluded. Source failure or missing/mismatched state is unresolved, never an empty queue. Keep earlier reports as continuity evidence.
++Inspection is read-only by default. It emits only allowlisted state/action labels and hashed keys; raw records, owner references, subjects, requester text and credentials are excluded. Source failure or missing/mismatched state is unresolved, never an empty queue. Keep earlier reports as continuity evidence. A completed root is checked only when its required native receipt, replacement refresh token, response timing and publication references are present, well typed and internally consistent. This validates retained publication structure; it does not prove that a lease is still live or that every referenced remote object is reachable. Malformed completed state remains unresolved before any recovery effect.
 +
 +For a root that already has `revocation_requested=true`, add `--recover-revocations` with a new report path. The report freezes the requested keys/resource before effects. The provider rechecks that exact resource before its existing source-checked cleanup. It cannot authorize a new revocation, resume token issuance, allocate a fresh enrollment intent or take over an unknown upstream refresh. A false/failed cleanup remains pending; only source-verified cleanup is reported as verified.
 +
@@ -899,10 +899,10 @@ index 0000000..fcf052f
 +        return None
 diff --git a/fulcra_mcp/unblock_operator.py b/fulcra_mcp/unblock_operator.py
 new file mode 100644
-index 0000000..694c68c
+index 0000000..d8a9388
 --- /dev/null
 +++ b/fulcra_mcp/unblock_operator.py
-@@ -0,0 +1,169 @@
+@@ -0,0 +1,213 @@
 +"""One-shot scoped observations and explicit already-requested revocation recovery.
 +
 +Run in the authorized issuer environment. This is not a public endpoint, a
@@ -916,10 +916,10 @@ index 0000000..694c68c
 +from urllib.parse import urlsplit
 +
 +from .settings import settings
-+from .unblock_bridge import NativeBridge, _origin
++from .unblock_bridge import NativeBridge, BridgeRejected, _origin, _uuid
 +from .unblock_owner import OwnerVault
 +from .unblock_provider import UnblockProvider
-+from .unblock_state import configured_store
++from .unblock_state import configured_store, state_key
 +from .unblock_ops_report import write_report
 +
 +
@@ -936,6 +936,50 @@ index 0000000..694c68c
 +        )
 +    ):
 +        raise ValueError("one to64 distinct hashed code keys required")
++
++
++def completed_publication_valid(row):
++    """Validate the retained publication, not current lease liveness.
++
++    A completed status alone cannot prove that the token handler persisted its
++    required receipt, replacement token and publication references. Do not
++    repair malformed state or grant it authority to perform cleanup here.
++    """
++    try:
++        checkpoints, binding, result = row["checkpoints"], row["binding"], row["result"]
++        receipt = checkpoints["native_receipt"]
++        refresh = checkpoints["refresh_token"]
++        intent = checkpoints["native_intent"]
++        timing = checkpoints["response_timing"]
++        if not all(isinstance(value, dict) for value in [
++            receipt, refresh, intent, timing, result
++        ]):
++            return False
++        if not all(type(value) is int and value > 0 for value in [
++            receipt["expires_at"], refresh["expires_at"], binding["session_expires_at"],
++            intent["expires_at"], timing["issued_at"], result["expires_at"],
++            result["rotated_at"],
++        ]):
++            return False
++        credential = receipt["credential"]
++        refresh_token = refresh["token"]
++        return (
++            isinstance(credential, str) and 0 < len(credential) <= 20000
++            and _uuid(receipt["grant_id"]) == receipt["grant_id"]
++            and _uuid(receipt["record_id"]) == receipt["record_id"]
++            and isinstance(refresh_token, str)
++            and re.fullmatch(r"uaa-refresh-[a-f0-9]{64}", refresh_token) is not None
++            and refresh["key"] == state_key("refresh", refresh_token)
++            and refresh["expires_at"] == binding["session_expires_at"]
++            and timing["issued_at"] <= receipt["expires_at"] <= refresh["expires_at"]
++            and receipt["expires_at"] == intent["expires_at"]
++            and result["access_key"] == state_key("access", credential)
++            and result["refresh_key"] == refresh["key"]
++            and result["expires_at"] == receipt["expires_at"]
++            and result["rotated_at"] == timing["issued_at"]
++        )
++    except (KeyError, TypeError, ValueError, BridgeRejected):
++        return False
 +
 +
 +async def inspect_keys(provider, code_keys, resource, *, recover=False):
@@ -973,7 +1017,7 @@ index 0000000..694c68c
 +                    or row["binding"].get("root_code_key") != key
 +                    or (
 +                        row.get("status") == "completed"
-+                        and not isinstance(row.get("result"), dict)
++                        and not completed_publication_valid(row)
 +                    )
 +                ):
 +                    item.update(
@@ -3540,10 +3584,10 @@ index 0000000..0243889
 +        assert not bridge.revoked
 diff --git a/tests/test_unblock_operator.py b/tests/test_unblock_operator.py
 new file mode 100644
-index 0000000..cec3ebf
+index 0000000..06b477f
 --- /dev/null
 +++ b/tests/test_unblock_operator.py
-@@ -0,0 +1,164 @@
+@@ -0,0 +1,233 @@
 +"""Operator observations/recovery use real provider state, not owner token output."""
 +
 +import json
@@ -3707,6 +3751,75 @@ index 0000000..cec3ebf
 +    report = await inspect_keys(context[4], [key], RESOURCE_A, recover=True)
 +    assert report["status"] == "unresolved"
 +    assert report["items"][0]["state"] == "source_unknown"
++    assert not context[2].revoked
++
++
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("checkpoints", {}),
++        ("result", {}),
++        ("checkpoints.native_receipt", {}),
++        ("checkpoints.native_receipt.credential", ""),
++        ("checkpoints.native_receipt.grant_id", "invalid"),
++        ("checkpoints.native_receipt.record_id", None),
++        ("checkpoints.native_receipt.expires_at", True),
++        ("checkpoints.refresh_token", {}),
++        ("checkpoints.refresh_token.token", "invalid"),
++        ("checkpoints.refresh_token.key", "refresh/" + "0" * 64),
++        ("checkpoints.refresh_token.expires_at", 1),
++        ("checkpoints.response_timing", {}),
++        ("checkpoints.response_timing.issued_at", False),
++        ("checkpoints.native_intent", {}),
++        ("checkpoints.native_intent.expires_at", 1),
++        ("result.access_key", "access/" + "0" * 64),
++        ("result.refresh_key", "refresh/" + "0" * 64),
++        ("result.expires_at", 1),
++        ("result.rotated_at", 1),
++    ],
++)
++@pytest.mark.parametrize("revocation_requested", [False, True])
++async def test_incomplete_publication_stays_unresolved_without_effects(
++    context, field, value, revocation_requested
++):
++    key = await connected(context)
++    row, generation = context[1].read(key)
++    target = row
++    parts = field.split(".")
++    for part in parts[:-1]:
++        target = target[part]
++    target[parts[-1]] = value
++    row["revocation_requested"] = revocation_requested
++    context[1].replace(key, row, generation)
++    report = await inspect_keys(context[4], [key], RESOURCE_A, recover=True)
++    assert report["status"] == "unresolved"
++    assert report["items"][0]["state"] == "source_unknown"
++    assert not context[2].revoked
++    output = json.dumps(report)
++    assert "synthetic-native" not in output and "uaa-refresh-" not in output
++
++
++async def test_expired_complete_publication_is_still_structurally_checked(context):
++    key = await connected(context)
++    context[0][0] += 10000
++    report = await inspect_keys(context[4], [key], RESOURCE_A)
++    assert report["status"] == "checked"
++
++
++async def test_empty_completed_dictionaries_give_cli_nonzero(context, tmp_path, monkeypatch):
++    import asyncio
++    import fulcra_mcp.unblock_operator as module
++
++    key = await connected(context)
++    row, generation = context[1].read(key)
++    row.update(checkpoints={}, result={})
++    context[1].replace(key, row, generation)
++    monkeypatch.setattr(module, "operator_provider", lambda resource: context[4])
++    path = tmp_path / "incomplete.json"
++    assert await asyncio.to_thread(main, [
++        "--resource", RESOURCE_A, "--code-key", key, "--report", str(path)
++    ]) == 1
++    assert json.loads(path.read_text())["status"] == "unresolved"
 +    assert not context[2].revoked
 diff --git a/tests/test_unblock_ops_report.py b/tests/test_unblock_ops_report.py
 new file mode 100644

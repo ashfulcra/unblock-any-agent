@@ -20,7 +20,7 @@ uv sync --locked
 uv run --locked pytest -q
 ```
 
-`manifest.json` pins the upstream commit, patch digest and resulting changed-file digests. The locked source suite passes 470 tests, with 16 inherited skips, five inherited expected failures and one inherited warning. The patch contains the source, HTTP and concurrency tests, and `docs/unblock-issuer.md` operator instructions. It changes no production configuration. Keep upstream's existing license and the accompanying `LICENSE.upstream` notice with upstream context; Unblock's public publisher/license choices remain release prerequisites.
+`manifest.json` pins the upstream commit, patch digest and resulting changed-file digests. The locked source suite passes 510 tests, with 16 inherited skips, five inherited expected failures and one inherited warning. The patch contains the source, HTTP and concurrency tests, and `docs/unblock-issuer.md` operator instructions. It changes no production configuration. Keep upstream's existing license and the accompanying `LICENSE.upstream` notice with upstream context; Unblock's public publisher/license choices remain release prerequisites.
 
 ## Scope
 
@@ -41,4 +41,4 @@ The probe uses two clients and exactly two synthetic hashed objects under a UUID
 
 The operator inspects at most 64 explicit code keys for one exact dashboard resource. It reports allowlisted metadata; unavailable or malformed source stays unresolved. It is read-only unless `--recover-revocations` is supplied, and then only already-requested revocations may be reconciled after a fresh provider resource check. Each finite invocation needs a new private report. It installs no scheduler, enumerates no new work and proves no unattended receiver coverage.
 
-A fresh source review found three Important issues in these tools; all were reproduced and fixed in one pass. The 35 added cases use generation-aware storage doubles and the actual provider. Real bucket acceptance still requires an authorized operator environment; neither local fixtures nor source publication replaces that check.
+A fresh source review found three Important issues in these tools; all were reproduced and fixed in one pass. A later automated review found incomplete completed publications could appear checked; required publication fields and derived references are now validated before cleanup, with 40 additional regression cases. The 75 operator/probe/report cases use generation-aware storage doubles and the actual provider. Real bucket acceptance still requires an authorized operator environment; neither local fixtures nor source publication replaces that check.
