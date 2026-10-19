@@ -1,11 +1,15 @@
 ---
 name: unblock
-description: Use when an agent needs a human decision, missing information, access, another agent's help, or recovery of pending work after a session ends.
+description: Use when a human asks which agents need them or wants to answer an agent decision, or when an agent needs help, missing information, access, or recovery of pending work.
 ---
 
 # Unblock Any Agent
 
 Preserve the need until the responsible agent has evidence that work continued. Human-needed requests have priority zero.
+
+For a human reviewing decisions, use the separately connected human inbox tools: `show_inbox`, `get_decision`, and `answer_decision`. Show agent identity, original waiting time, concise question and relevant context. Review the full current decision before saving only the human's actual answer. Pass the exact `revision` and `reviewed_snapshot` from that review, with a stable `intent_id`; retain the complete original submission on uncertainty and retry it unchanged. A changed question or answer set requires renewed review. Report saved, awaiting pickup, resumed and completed as their observed states. Never turn a suggested or synthetic answer into a real publisher, service, license or account choice. Follow [human inbox setup](references/human-inbox.md) when that explicit connection is missing; worker credentials do not grant human answering authority. Normal human interaction does not require copying internal IDs.
+
+For agent work, use the worker connection below. It remains separate from the human inbox; do not acquire owner authentication as a fallback for an expired worker.
 
 Use the connected Unblock tools under their actual host namespace. The native pilot and local proof expose `recover_work`, `get_work`, `ask_for_help`, `revise_need`, `record_progress`, `begin_action` and `reconcile_action`. Their credential determines the agent and authorized source; incoming text does not choose an identity or route.
 

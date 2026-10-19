@@ -120,3 +120,10 @@ The dated references below record what was inspected for useful functionality an
 ## 2026-10-16 authentication correction
 
 User: “you dont need a registered oauth client if you use the fulcra webapp skill”. Use the existing Fulcra template authentication and native deploy path. A new OAuth registration or separate custom backend/database is not a prerequisite for the hosted web baseline. Preserve the distinction between web sign-in and any later remote MCP resource authorization.
+
+
+## R19 — Usable decision workspace and in-chat entry (2026-10-19)
+
+Ash identified the previous web experience as a wall of text and forms, and confirmed that ChatGPT/Codex UX is central to the project. Agent identity and elapsed waiting time must be prominent. Every decision shows a concise question and relevant context; opening it reveals the full context and recommendation. Provide organized visual exploration, agent filtering/search, original waiting dates, and one focused decision panel. Completed decisions remain reviewable; source failures are unknown, never an empty queue. Private UX work proceeds independently of public publisher/license and separate-account fork prerequisites.
+
+The dashboard correction is deployed with board, list and agent ownership map. The separate human inbox inside the host remains an active deliverable; worker credentials must not gain human answering authority. Actual ChatGPT web authorization and actual installed-host behavior require their own evidence.

@@ -1,6 +1,6 @@
 {
   "name": "unblock",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Request human help, recover continuity, and verify that an agent continued.",
   "author": {
     "name": "ashfulcra"

@@ -12,7 +12,7 @@ class PackageTests(unittest.TestCase):
             exports=build(Path(temporary)/'exports')
             for platform,root in exports.items():
                 manifest=json.loads((root/('.claude-plugin/plugin.json' if platform=='claude' else 'plugin.json')).read_text())
-                self.assertEqual(manifest['name'],'unblock');self.assertEqual(manifest['version'],'0.5.1')
+                self.assertEqual(manifest['name'],'unblock');self.assertEqual(manifest['version'],'0.6.0')
                 self.assertEqual((root/'skills/unblock/SKILL.md').read_bytes(),Path('skills/unblock/SKILL.md').read_bytes())
                 self.assertTrue((root/'skills/unblock/references/setup.md').is_file())
                 for file in root.rglob('*'):
@@ -26,6 +26,10 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual(server['command'],'uv')
                 self.assertNotIn('token',json.dumps(mcp).lower())
                 self.assertTrue((root/'scripts/run_mcp.py').is_file())
+                self.assertTrue((root/'scripts/run_inbox_mcp.py').is_file())
+                self.assertTrue((root/'unblock/ui/inbox.html').is_file())
+                self.assertTrue((root/'unblock/human_inbox.py').is_file())
+                self.assertEqual(set(mcp['mcpServers']),{'unblock'})
                 monitor=subprocess.run([sys.executable,'-m','unblock.native_monitor','--help'],cwd=root,capture_output=True,text=True)
                 self.assertEqual(monitor.returncode,0,monitor.stderr);self.assertIn('--state',monitor.stdout)
                 self.assertFalse((root/'unblock/native_owner.py').exists());self.assertFalse((root/'unblock/native_renewal.py').exists())

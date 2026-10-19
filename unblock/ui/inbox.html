@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Agent decisions</title>
+    <style>
+      :root {
+        font-family: var(--font-sans, system-ui, sans-serif);
+        color-scheme: light dark;
+        --bg: #13151e;
+        --card: #1c1f2b;
+        --ink: #edf0f7;
+        --muted: #a4adbf;
+        --line: #ffffff1d;
+        --accent: #91dec2;
+        --wait: #e7bf86;
+      }
+      :root[data-theme="light"] {
+        --bg: #f7f8fb;
+        --card: #fff;
+        --ink: #1c2535;
+        --muted: #59677c;
+        --line: #18253d22;
+        --accent: #126f58;
+        --wait: #805118;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-size: 14px;
+      }
+      main {
+        max-height: 740px;
+        overflow: auto;
+        padding: 22px;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+        color: inherit;
+      }
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      h1 {
+        font-size: 22px;
+        letter-spacing: -0.5px;
+        margin: 0;
+      }
+      header p {
+        color: var(--muted);
+        font-size: 12px;
+        margin: 8px 0 0;
+      }
+      .quiet {
+        border: 1px solid var(--line);
+        background: transparent;
+        border-radius: 8px;
+        padding: 9px 12px;
+      }
+      .status {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin: 22px 0 16px;
+      }
+      .status button {
+        border: 1px solid var(--line);
+        background: var(--card);
+        border-radius: 8px;
+        padding: 10px 13px;
+        font-size: 12px;
+      }
+      .status .active {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .filters {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 18px;
+      }
+      .filters input,
+      .filters select {
+        min-width: 0;
+        color: var(--ink);
+        background: var(--card);
+        border: 1px solid var(--line);
+        padding: 10px;
+        border-radius: 8px;
+      }
+      .filters input {
+        flex: 1;
+      }
+      .filters select {
+        max-width: 40%;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .card {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 17px;
+      }
+      .card:hover {
+        border-color: var(--accent);
+      }
+      .agent {
+        font-size: 14px;
+        font-weight: 650;
+        display: block;
+        overflow-wrap: anywhere;
+      }
+      .age {
+        font-size: 12px;
+        color: var(--wait);
+        display: block;
+        margin: 9px 0 14px;
+      }
+      .question {
+        font-size: 15px;
+        line-height: 1.5;
+        display: block;
+      }
+      .context {
+        font-size: 12px;
+        line-height: 1.65;
+        color: var(--muted);
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+        overflow: hidden;
+        margin-top: 9px;
+      }
+      .state {
+        font-size: 11px;
+        color: var(--accent);
+        display: block;
+        border-top: 1px solid var(--line);
+        padding-top: 11px;
+        margin-top: 14px;
+      }
+      .message {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 13px;
+        line-height: 1.6;
+        font-size: 12px;
+        margin: 15px 0;
+        color: var(--wait);
+      }
+      .message:empty {
+        display: none;
+      }
+      .empty {
+        padding: 32px 14px;
+        color: var(--muted);
+        line-height: 1.7;
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+      }
+      .detail {
+        border: 1px solid var(--line);
+        background: var(--card);
+        border-radius: 12px;
+        padding: 20px;
+      }
+      .detail header {
+        margin-bottom: 20px;
+      }
+      .detail h2 {
+        font-size: 21px;
+        line-height: 1.5;
+        letter-spacing: -0.4px;
+      }
+      .detail h3 {
+        font-size: 12px;
+        margin: 22px 0 8px;
+      }
+      .detail p,
+      .detail blockquote {
+        font-size: 13px;
+        line-height: 1.75;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .detail blockquote {
+        margin: 10px 0;
+        padding: 12px;
+        border-left: 2px solid var(--accent);
+        background: var(--bg);
+      }
+      .recommendation {
+        padding: 1px 14px 12px;
+        border-left: 2px solid var(--accent);
+        background: var(--bg);
+        border-radius: 6px;
+      }
+      .detail textarea {
+        width: 100%;
+        min-height: 110px;
+        background: var(--bg);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        resize: vertical;
+        line-height: 1.6;
+      }
+      .primary {
+        background: var(--accent);
+        color: var(--bg);
+        border: 0;
+        border-radius: 8px;
+        width: 100%;
+        padding: 12px;
+        font-weight: 650;
+        margin-top: 10px;
+      }
+      .hint {
+        font-size: 11px !important;
+        color: var(--muted);
+        margin: 9px 0 0;
+      }
+      details {
+        border-top: 1px solid var(--line);
+        padding-top: 15px;
+        margin-top: 18px;
+      }
+      summary {
+        font-size: 12px;
+        cursor: pointer;
+        color: var(--muted);
+      }
+      footer {
+        color: var(--muted);
+        font-size: 10px;
+        margin-top: 20px;
+        line-height: 1.6;
+      }
+      @media (max-width: 560px) {
+        main {
+          padding: 16px;
+        }
+        .cards {
+          grid-template-columns: 1fr;
+        }
+        .filters {
+          flex-wrap: wrap;
+        }
+        .filters input {
+          flex-basis: 100%;
+        }
+        .filters select {
+          max-width: 100%;
+          width: 100%;
+        }
+        .status button {
+          flex: 1;
+          padding: 9px 8px;
+        }
+        h1 {
+          font-size: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Agent decisions <span aria-hidden="true">↗</span></h1>
+          <p>Who’s waiting. What they need. What happens next.</p>
+        </div>
+        <button id="refresh" class="quiet" aria-label="Refresh decisions">
+          ↻
+        </button>
+      </header>
+      <div id="message" class="message" role="status"></div>
+      <div id="overview">
+        <nav id="status" class="status" aria-label="Work status"></nav>
+        <div class="filters">
+          <input
+            id="search"
+            type="search"
+            aria-label="Search decisions"
+            placeholder="Find a decision, context or agent…"
+          /><select id="agents" aria-label="Filter by agent">
+            <option value="">All agents</option>
+          </select>
+        </div>
+        <section
+          id="cards"
+          class="cards"
+          aria-label="Agent decisions"
+        ></section>
+      </div>
+      <section
+        id="detail"
+        class="detail"
+        aria-label="Selected decision"
+        hidden
+      ></section>
+      <footer id="source">Connecting to your human inbox…</footer>
+    </main>
+    <script type="module">
+      const $ = (id) => document.getElementById(id),
+        el = (tag, text, cls) => {
+          const node = document.createElement(tag);
+          if (text !== undefined) node.textContent = text;
+          if (cls) node.className = cls;
+          return node;
+        };
+      const labels = {
+        needs_you: "Decision needed",
+        conflict: "Question changed",
+        answer_conflict: "Review answers",
+        uncertain_action: "Verify action",
+        awaiting_pickup: "Awaiting pickup",
+        acknowledged: "Answer read",
+        resumed: "Working",
+        completed: "Completed",
+      };
+      const lane = (state) =>
+        [
+          "needs_you",
+          "conflict",
+          "answer_conflict",
+          "uncertain_action",
+        ].includes(state)
+          ? "needs_you"
+          : state === "completed"
+            ? "done"
+            : "with_agents";
+      let last = null,
+        detail = null,
+        selected = "",
+        tab = "needs_you",
+        workspace = "",
+        ready = false,
+        interactive = false,
+        hostOrigin = "*",
+        busy = false;
+      const drafts = new Map(),
+        pending = new Map(),
+        calls = new Map();
+      let sequence = 0;
+      let selectionVersion = 0;
+      const age = (value) => {
+        const start = Date.parse(value || "");
+        if (!Number.isFinite(start) || start > Date.now())
+          return "Waiting time unknown";
+        const m = Math.floor((Date.now() - start) / 60000);
+        return m < 1
+          ? "Just now"
+          : m < 60
+            ? `${m}m`
+            : m < 1440
+              ? `${Math.floor(m / 60)}h ${m % 60}m`
+              : `${Math.floor(m / 1440)}d ${Math.floor(m / 60) % 24}h`;
+      };
+      const storageKey = (kind, id) =>
+        `unblock-human:${workspace}:${kind}:${id}`;
+      function save(kind, id, value) {
+        try {
+          if (value)
+            sessionStorage.setItem(storageKey(kind, id), JSON.stringify(value));
+          else sessionStorage.removeItem(storageKey(kind, id));
+        } catch {}
+      }
+      function bindWorkspace(id) {
+        if (!id || workspace === id) return;
+        if (workspace && workspace !== id) {
+          last = null;
+          detail = null;
+          selected = "";
+          drafts.clear();
+          pending.clear();
+        }
+        workspace = id;
+        try {
+          for (let i = 0; i < sessionStorage.length; i++) {
+            const key = sessionStorage.key(i),
+              prefix = `unblock-human:${workspace}:`;
+            if (key?.startsWith(prefix)) {
+              const [kind, id] = key.slice(prefix.length).split(":");
+              const value = JSON.parse(sessionStorage.getItem(key));
+              (kind === "draft" ? drafts : pending).set(id, value);
+            }
+          }
+        } catch {}
+      }
+      function notify(method, params = {}) {
+        window.parent.postMessage(
+          { jsonrpc: "2.0", method, params },
+          hostOrigin,
+        );
+      }
+      function rpc(method, params) {
+        return new Promise((resolve, reject) => {
+          const id = `unblock-${++sequence}`,
+            timer = setTimeout(() => {
+              calls.delete(id);
+              reject(
+                new Error(
+                  "Connection timed out. Retained work and answer intents remain pending.",
+                ),
+              );
+            }, 30000);
+          calls.set(id, { resolve, reject, timer });
+          window.parent.postMessage(
+            { jsonrpc: "2.0", id, method, params },
+            hostOrigin,
+          );
+        });
+      }
+      async function tool(name, args = {}) {
+        if (!interactive)
+          throw new Error(
+            "This host has not enabled interactive tools. Use the inbox tools in chat.",
+          );
+        const result = await rpc("tools/call", { name, arguments: args });
+        if (result.isError)
+          throw new Error(
+            result.content?.map((c) => c.text || "").join(" ") ||
+              "Tool unavailable; retained work remains pending.",
+          );
+        return result.structuredContent;
+      }
+      function message(text) {
+        $("message").textContent = text || "";
+      }
+      function applyInbox(data) {
+        if (!data?.items) return;
+        bindWorkspace(data.workspace_id);
+        const first = !last;
+        last = data;
+        ready = data.source === "checked";
+        for (const p of data.pending_answers || []) {
+          pending.set(p.request_id, p);
+          save("pending", p.request_id, p);
+        }
+        if (first && pending.size) tab = "pending";
+        if (!ready)
+          message(
+            data.last_known
+              ? "Connection unavailable. Showing last-known work; current status is unknown."
+              : "Your work is unavailable. Pending decisions are unknown until the connection recovers.",
+          );
+        else if (pending.size) message(`${pending.size} saved decision intent(s) need verification. Open Verify answers to reconcile the original submission.`);
+        renderOverview();
+        if (detail) renderDetail();
+      }
+      function applyDetail(data) {
+        if (!data?.request) return;
+        bindWorkspace(data.workspace_id);
+        detail = data;
+        selected = data.request.id;
+        ready = data.source === "checked";
+        renderDetail();
+      }
+      function renderOverview() {
+        if (!last) return;
+        $("overview").hidden = !!selected;
+        $("detail").hidden = !selected;
+        const counts = last.counts;
+        $("status").replaceChildren();
+        for (const [id, title] of [
+          ["needs_you", "Needs you"],
+          ["with_agents", "With agents"],
+          ["done", "Done"],
+          ...(pending.size ? [["pending", "Verify answers"]] : []),
+        ]) {
+          const b = el(
+            "button",
+            `${id === "pending" ? pending.size : counts?.[id] ?? "—"}  ${title}`,
+            id === tab ? "active" : "",
+          );
+          b.onclick = () => {
+            tab = id;
+            renderOverview();
+          };
+          $("status").append(b);
+        }
+        const choice = $("agents").value;
+        const names = new Map(
+          last.items.map((i) => [i.agent_id, i.agent_name]),
+        );
+        $("agents").replaceChildren(
+          new Option("All agents", ""),
+          ...Array.from(names, ([id, name]) => new Option(name, id)),
+        );
+        $("agents").value = names.has(choice) ? choice : "";
+        const terms = $("search")
+          .value.toLocaleLowerCase()
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean);
+        const rows = last.items.filter(
+          (i) =>
+            (tab === "pending" ? pending.has(i.request_id) : lane(i.state) === tab) &&
+            (!$("agents").value || i.agent_id === $("agents").value) &&
+            terms.every((t) =>
+              [i.agent_name, i.agent_id, i.decision, i.context]
+                .join(" ")
+                .toLocaleLowerCase()
+                .includes(t),
+            ),
+        );
+        $("cards").replaceChildren();
+        for (const item of rows) {
+          const b = el("button", undefined, "card");
+          b.dataset.request = item.request_id;
+          b.append(
+            el("span", item.agent_name, "agent"),
+            el(
+              "span",
+              `${item.state === "completed" ? "Requested" : "Waiting"} · ${age(item.created_at)}`,
+              "age",
+            ),
+            el("strong", item.decision, "question"),
+            el("span", item.context, "context"),
+            el("span", `${labels[item.state] || "Needs review"}  ↗`, "state"),
+          );
+          b.onclick = () => openDecision(item.request_id);
+          $("cards").append(b);
+        }
+        if (!rows.length)
+          $("cards").append(
+            el(
+              "p",
+              !ready && !last.last_known
+                ? "Work status is unknown."
+                : last.items.length
+                  ? "No decisions match this view."
+                  : "No pending decisions in the checked workspace.",
+              "empty",
+            ),
+          );
+        $("source").textContent = ready
+          ? `Workspace checked ${new Date(last.checked_at).toLocaleTimeString()}. Sending an answer does not prove pickup.`
+          : "Source unavailable · last-known work and pending answers retained.";
+      }
+      function section(title, text, parent = $("detail")) {
+        parent.append(
+          el("h3", title),
+          el("p", text || "No additional context supplied."),
+        );
+      }
+      function renderDetail() {
+        if (!detail || !selected) return;
+        const row = detail.request,
+          hadFocus = document.activeElement?.id === "answer",
+          cursor = hadFocus ? document.activeElement.selectionStart : null;
+        const panel = $("detail");
+        panel.replaceChildren();
+        $("overview").hidden = true;
+        panel.hidden = false;
+        const head = el("header"),
+          identity = el("div");
+        identity.append(
+          el("strong", detail.agent_name || row.agent_id, "agent"),
+          el(
+            "span",
+            `Waiting · ${age(row.created_at)} · ${labels[row.state] || row.state}`,
+            "age",
+          ),
+        );
+        const close = el("button", "Back to decisions", "quiet");
+        close.onclick = closeDetail;
+        head.append(identity, close);
+        panel.append(head);
+        for (const q of row.revisions) {
+          panel.append(el("h2", q.payload.need));
+          section("What you need to know", q.payload.context);
+          const rec = el("div", undefined, "recommendation");
+          section("Agent’s recommendation", q.payload.recommendation, rec);
+          panel.append(rec);
+          const next = el("details");
+          next.append(
+            el("summary", "What happens next"),
+            el("p", q.payload.next_action),
+          );
+          panel.append(next);
+        }
+        if (row.answers.length) {
+          section("Your saved decisions", "");
+          panel.lastChild.remove();
+          for (const a of row.answers)
+            panel.append(el("blockquote", a.payload.answer));
+        }
+        if (row.uncertain_actions.length) {
+          for (const action of row.uncertain_actions)
+            section("Verify before repeating", action.payload.effect);
+        }
+        if (detail.can_answer || pending.has(selected)) {
+          const draft = drafts.get(selected),
+            intent = pending.get(selected);
+          section(
+            row.answers.length ? "Add a clarification" : "Your decision",
+            "",
+          );
+          panel.lastChild.remove();
+          const area = el("textarea");
+          area.id = "answer";
+          area.setAttribute("aria-label", "Your decision");
+          area.maxLength = 16000;
+          area.value = intent?.answer || draft?.answer || "";
+          area.disabled = !!intent;
+          area.placeholder = "Give the agent what it needs to move forward…";
+          area.oninput = () => {
+            const old = drafts.get(selected),
+              q = row.revisions[0];
+            const value = old
+              ? { ...old, answer: area.value }
+              : {
+                  request_id: selected,
+                  revision: q.id,
+                  reviewed_snapshot: detail.reviewed_snapshot,
+                  answer: area.value,
+                };
+            drafts.set(selected, value);
+            save("draft", selected, value);
+            send.disabled =
+              busy ||
+              !ready ||
+              !interactive ||
+              !area.value.trim() ||
+              value.reviewed_snapshot !== detail.reviewed_snapshot;
+          };
+          panel.append(area);
+          if (
+            draft &&
+            !intent &&
+            draft.reviewed_snapshot !== detail.reviewed_snapshot
+          ) {
+            panel.append(
+              el(
+                "p",
+                "The question or answers changed. Review the full current decision before sending.",
+                "message",
+              ),
+            );
+            const review = el(
+              "button",
+              "I reviewed this updated decision",
+              "quiet",
+            );
+            review.onclick = () => {
+              const currentDraft = drafts.get(row.id);
+              if (!currentDraft || selected !== row.id) return;
+              const next = {
+                ...currentDraft,
+                revision: row.revisions[0].id,
+                reviewed_snapshot: detail.reviewed_snapshot,
+              };
+              drafts.set(selected, next);
+              save("draft", selected, next);
+              renderDetail();
+            };
+            panel.append(review);
+          }
+          const send = el(
+            "button",
+            intent ? "Retry saved decision" : "Send decision  ↗",
+            "primary",
+          );
+          send.disabled =
+            busy ||
+            !ready ||
+            !interactive ||
+            (!intent &&
+              (!area.value.trim() ||
+                draft?.reviewed_snapshot !== detail.reviewed_snapshot));
+          send.onclick = sendDecision;
+          panel.append(
+            send,
+            el(
+              "p",
+              intent
+                ? "Original intent retained. Retrying reconciles the same answer."
+                : "Your decision is saved separately from worker pickup and completion.",
+              "hint",
+            ),
+          );
+          if (hadFocus) {
+            area.focus();
+            if (cursor !== null) area.setSelectionRange(cursor, cursor);
+          }
+        } else if (row.revisions.length !== 1)
+          panel.append(
+            el(
+              "p",
+              "The agent must reconcile the question versions before you answer.",
+              "message",
+            ),
+          );
+        if (row.state === "awaiting_pickup")
+          panel.append(
+            el(
+              "p",
+              "Your answer is saved. Agent pickup has not been observed yet.",
+              "message",
+            ),
+          );
+        for (const p of row.progress || [])
+          section(
+            p.payload.stage === "completed"
+              ? "Completed"
+              : p.payload.stage === "resumed"
+                ? "Work resumed"
+                : "Answer read",
+            p.payload.evidence,
+          );
+        const history = el("details");
+        history.append(el("summary", "Earlier context & activity"));
+        for (const q of row.history || []) {
+          history.append(el("h3", q.payload.need), el("p", q.payload.context));
+        }
+        for (const a of row.stale_answers || [])
+          history.append(
+            el("blockquote", "Earlier decision: " + a.payload.answer),
+          );
+        panel.append(history);
+        notify("ui/notifications/size-changed", {
+          height: Math.min(document.documentElement.scrollHeight, 760),
+        });
+      }
+      async function refresh() {
+        const requestId = selected, version = selectionVersion;
+        try {
+          const data = await tool("show_inbox", { include_completed: true });
+          applyInbox(data);
+          if (requestId && selected === requestId && version === selectionVersion && ready) {
+            const result = await tool("get_decision", { request_id: requestId });
+            if (selected === requestId && version === selectionVersion) applyDetail(result);
+          }
+        } catch (error) {
+          ready = false;
+          message(error.message);
+          if (detail) renderDetail();
+        }
+      }
+      async function openDecision(id) {
+        const version = ++selectionVersion;
+        try {
+          const data = await tool("get_decision", { request_id: id });
+          if (version !== selectionVersion) return;
+          applyDetail(data);
+          $("detail").querySelector("button")?.focus();
+          message("");
+        } catch (error) {
+          ready = false;
+          message(error.message);
+        }
+      }
+      function closeDetail() {
+        ++selectionVersion;
+        const id = selected;
+        selected = "";
+        detail = null;
+        renderOverview();
+        Array.from($("cards").querySelectorAll("button"))
+          .find((b) => b.dataset.request === id)
+          ?.focus();
+      }
+      async function sendDecision() {
+        if (busy || !selected) return;
+        const requestId = selected, version = selectionVersion;
+        let intent = pending.get(requestId);
+        if (!intent) {
+          const draft = drafts.get(requestId);
+          if (!draft || draft.reviewed_snapshot !== detail.reviewed_snapshot)
+            return;
+          intent = { ...draft, intent_id: crypto.randomUUID() };
+          pending.set(requestId, intent);
+          save("pending", requestId, intent);
+        }
+        busy = true;
+        renderDetail();
+        try {
+          const outcome = await tool("answer_decision", intent);
+          if (outcome.visibility === "visible") {
+            pending.delete(requestId);
+            drafts.delete(requestId);
+            save("pending", requestId, null);
+            save("draft", requestId, null);
+            message(
+              outcome.current_question === false
+                ? "Saved against an earlier question. Review the current decision."
+                : "Decision read back. Watching for actual agent progress.",
+            );
+          } else {
+            if (outcome.visibility === "rejected") {
+              pending.delete(requestId);
+              save("pending", requestId, null);
+            }
+            message(outcome.reason);
+          }
+          await refresh();
+        } catch (error) {
+          if (
+            /decision_changed_review_again|invalid_human_answer/.test(
+              error.message,
+            )
+          ) {
+            pending.delete(requestId);
+            save("pending", requestId, null);
+          }
+          ready = false;
+          message(error.message);
+          try {
+            if (selected === requestId && version === selectionVersion) {
+              const result = await tool("get_decision", { request_id: requestId });
+              if (selected === requestId && version === selectionVersion) applyDetail(result);
+            }
+          } catch {}
+        } finally {
+          busy = false;
+          renderDetail();
+        }
+      }
+      window.addEventListener("message", (event) => {
+        if (event.source !== window.parent || event.data?.jsonrpc !== "2.0")
+          return;
+        const m = event.data;
+        if (m.id && calls.has(m.id)) {
+          const call = calls.get(m.id);
+          clearTimeout(call.timer);
+          calls.delete(m.id);
+          if (event.origin !== "null") hostOrigin = event.origin;
+          m.error
+            ? call.reject(
+                new Error(
+                  m.error.message || "Host call failed; pending work retained.",
+                ),
+              )
+            : call.resolve(m.result);
+          return;
+        }
+        if (m.method === "ui/notifications/tool-result") {
+          const data = m.params?.structuredContent;
+          if (data?.items) applyInbox(data);
+          else if (data?.request && (selectionVersion === 0 || selected === data.request.id)) applyDetail(data);
+        }
+        if (
+          m.method === "ui/notifications/host-context-changed" &&
+          m.params?.theme
+        )
+          document.documentElement.dataset.theme = m.params.theme;
+        if (m.method === "ui/resource-teardown") {
+          clearInterval(poll);
+          for (const call of calls.values()) {
+            clearTimeout(call.timer);
+            call.reject(new Error("View closed; pending intents retained."));
+          }
+          calls.clear();
+          window.parent.postMessage(
+            { jsonrpc: "2.0", id: m.id, result: {} },
+            hostOrigin,
+          );
+        }
+      });
+      $("refresh").onclick = refresh;
+      $("search").oninput = renderOverview;
+      $("agents").onchange = renderOverview;
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && selected) {
+          e.preventDefault();
+          closeDetail();
+        }
+      });
+      const poll = setInterval(() => {
+        if (interactive && !busy) refresh();
+      }, 15000);
+      rpc("ui/initialize", {
+        appInfo: { name: "unblock-inbox", version: "0.6.0" },
+        appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
+        protocolVersion: "2026-01-26",
+      })
+        .then((host) => {
+          document.documentElement.dataset.theme =
+            host.hostContext?.theme || "dark";
+          interactive = !!host.hostCapabilities?.serverTools;
+          notify("ui/notifications/initialized");
+          if (interactive) refresh();
+          else
+            message(
+              "Interactive tools are unavailable in this host. Use the checked inbox tools in chat.",
+            );
+        })
+        .catch((error) => {
+          message(error.message);
+          $("source").textContent =
+            "Host connection unavailable; work status is unknown.";
+        });
+    </script>
+  </body>
+</html>

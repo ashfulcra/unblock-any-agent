@@ -1,9 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './helpers/native-fixture.js';
+import { decisionSnapshot } from '../src/lib/server/unblock-core.js';
 
 
 const need={intent_id:'i1',need_key:'color',need:'Choose color',context:'Page work',recommendation:'Blue',next_action:'Apply color',parents:[]};
+
+test('human inbox answer checks the reviewed question, full answer set and uncertain actions at the service boundary',async()=>{
+ const f=fixture(),owner=(/** @type {string} */ op,/** @type {any} */ body={})=>f.service.handle(op,{cookieToken:f.token,body});
+ const enrollment=await owner('enroll',{intent_id:'reviewed-human-agent',agent_id:'alpha',name:'Alpha'});f.publish();
+ const worker=(/** @type {string} */ op,/** @type {any} */ body)=>f.service.handle(op,{token:enrollment.credential,body});
+ const request=await worker('request',need);f.publish();
+ const initial=(await owner('attention')).requests[0];
+ const body={intent_id:'reviewed-human-answer',request_id:request.request_id,revision:request.record_id,answer:'Blue',reviewed_snapshot:decisionSnapshot(initial)};
+ await owner('answer',{...body,intent_id:'intervening',answer:'Red',reviewed_snapshot:undefined});f.publish();
+ await assert.rejects(()=>owner('answer',body),/review again/);
+ const reviewed=(await owner('attention')).requests[0];
+ const saved={...body,reviewed_snapshot:decisionSnapshot(reviewed)};
+ const receipt=await owner('answer',saved);f.publish();
+ assert.equal((await owner('attention')).requests[0].state,'answer_conflict');
+ assert.equal((await owner('answer',saved)).record_id,receipt.record_id);
+ const later=(await owner('attention')).requests[0];
+ await worker('action',{intent_id:'uncertain-change',request_id:request.request_id,effect:'Uncertain marker'});f.publish();
+ await assert.rejects(()=>owner('answer',{...body,intent_id:'old-action-snapshot',reviewed_snapshot:decisionSnapshot(later)}),/review again/);
+ await worker('request',{...need,intent_id:'new-human-question',parents:[request.record_id],need:'Updated question'});f.publish();
+ assert.equal((await owner('answer',saved)).record_id,receipt.record_id);
+ const current=(await owner('attention')).requests[0];
+ await assert.rejects(()=>owner('answer',{...body,intent_id:'old-revision',reviewed_snapshot:decisionSnapshot(current)}),/review again/);
+});
 
 test('real native operation flow preserves pending receipt, scoped recovery and human attribution',async()=>{
  const f=fixture(),call=(/** @type {string} */ op,/** @type {any} */ body,cookie=f.token,token='')=>f.service.handle(op,{body,cookieToken:cookie,token});
