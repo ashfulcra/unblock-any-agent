@@ -52,6 +52,14 @@
   );
   const mapAgents = $derived(groupAgents(filtered, grants));
   const selected = $derived(requests.find((r) => r.id === selectedId));
+  const selectedPending = $derived(
+    Object.values(pending).find(
+      (p) => p.request_id === selectedId && p.revision === selected?.revisions[0]?.id
+    )
+  );
+  const earlierPending = $derived(
+    Object.values(pending).filter((p) => p.request_id === selectedId && p !== selectedPending)
+  );
   const concernCount = $derived(
     expectations.filter((r) => ['due', 'investigate', 'conflict'].includes(r.state)).length
   );
@@ -106,18 +114,29 @@
         notice = 'Enrollment read back. The credential is ready until its displayed expiry.';
       }
       for (const [id, body] of Object.entries(pending)) {
-        const row = requests.find((r) => r.id === id);
+        const row = requests.find((r) => r.id === body.request_id);
         if (
           row &&
           [...row.answers, ...row.stale_answers].some(
-            (a) => a.intent_id === body.intent_id && a.payload.answer === body.answer
+            (a) =>
+              a.intent_id === body.intent_id &&
+              a.payload.answer === body.answer &&
+              a.payload.revision === body.revision &&
+              a.payload.responder === ownerId
           )
         ) {
           delete pending[id];
-          delete drafts[id];
-          delete answers[id];
           sessionStorage.removeItem('unblock-answer:' + id);
-          sessionStorage.removeItem('unblock-draft:' + id);
+          const draft = drafts[body.request_id];
+          if (
+            draft?.intent_id === body.intent_id &&
+            draft?.revision === body.revision &&
+            draft?.answer === body.answer
+          ) {
+            delete drafts[body.request_id];
+            delete answers[body.request_id];
+            sessionStorage.removeItem('unblock-draft:' + body.request_id);
+          }
           notice = 'Answer read back. Current agent progress appears on the request card.';
         }
       }
@@ -189,25 +208,30 @@
       busy = false;
     }
   }
-  /** @param {any} row */
-  async function answer(row) {
+  /** @param {any} row @param {any} [saved] */
+  async function answer(row, saved = null) {
     const revision = row.revisions[0];
-    if (!pending[row.id]) {
+    let body =
+      saved ||
+      Object.values(pending).find((p) => p.request_id === row.id && p.revision === revision.id);
+    if (!body) {
       try {
-        pending[row.id] = submitDraft(drafts[row.id], revision.id);
+        body = submitDraft(drafts[row.id], revision.id);
       } catch (e) {
         error = /** @type {Error} */ (e).message;
         return;
       }
-      sessionStorage.setItem('unblock-answer:' + row.id, JSON.stringify(pending[row.id]));
+      pending[body.intent_id] = body;
+      sessionStorage.setItem('unblock-answer:' + body.intent_id, JSON.stringify(body));
     }
+    const intent = body.intent_id;
     busy = true;
     error = '';
     try {
-      const data = await post('answer', pending[row.id]);
-      if (pending[row.id]) {
-        pending[row.id] = failedAnswer(pending[row.id], 'uncertain');
-        sessionStorage.setItem('unblock-answer:' + row.id, JSON.stringify(pending[row.id]));
+      const data = await post('answer', body);
+      if (pending[intent]) {
+        pending[intent] = failedAnswer(pending[intent], 'uncertain');
+        sessionStorage.setItem('unblock-answer:' + intent, JSON.stringify(pending[intent]));
       }
       notice =
         data.visibility === 'visible'
@@ -216,13 +240,13 @@
       await refresh();
     } catch (e) {
       const failure = /** @type {Error & {writeOutcome?:string}} */ (e);
-      const retained = failedAnswer(pending[row.id], failure.writeOutcome || 'uncertain');
+      const retained = failedAnswer(pending[intent], failure.writeOutcome || 'uncertain');
       if (retained) {
-        pending[row.id] = retained;
-        sessionStorage.setItem('unblock-answer:' + row.id, JSON.stringify(retained));
+        pending[intent] = retained;
+        sessionStorage.setItem('unblock-answer:' + intent, JSON.stringify(retained));
       } else {
-        delete pending[row.id];
-        sessionStorage.removeItem('unblock-answer:' + row.id);
+        delete pending[intent];
+        sessionStorage.removeItem('unblock-answer:' + intent);
       }
       error = failure.message;
     } finally {
@@ -260,8 +284,10 @@
         agentScope = (pendingEnrollment.agent_ids || []).join(',');
       }
     } catch {}
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const k = sessionStorage.key(i);
+    const storageKeys = Array.from({ length: sessionStorage.length }, (_, i) =>
+      sessionStorage.key(i)
+    );
+    for (const k of storageKeys) {
       if (k?.startsWith('unblock-draft:'))
         try {
           const body = JSON.parse(sessionStorage.getItem(k) || 'null');
@@ -273,9 +299,12 @@
       if (k?.startsWith('unblock-answer:'))
         try {
           const body = JSON.parse(sessionStorage.getItem(k) || 'null');
-          if (body?.request_id) {
-            pending[body.request_id] = body;
-            answers[body.request_id] = body.answer;
+          if (body?.request_id && body.intent_id) {
+            pending[body.intent_id] = body;
+            if (k !== 'unblock-answer:' + body.intent_id) {
+              sessionStorage.removeItem(k);
+              sessionStorage.setItem('unblock-answer:' + body.intent_id, JSON.stringify(body));
+            }
           }
         } catch {}
     }
@@ -501,6 +530,13 @@
                           laneFilter = 'done';
                         }}>Explore all completed work →</button
                       >{/if}
+                    {#if lane.id !== 'done' && filtered.filter((r) => requestView(r).lane === lane.id).length > 100}<button
+                        class="show-history"
+                        onclick={() => {
+                          mode = 'list';
+                          laneFilter = lane.id;
+                        }}>Explore all {lane.name.toLowerCase()} work →</button
+                      >{/if}
                   </div>
                 </section>{/each}
             </div>
@@ -551,9 +587,11 @@
         {#if selected}<RequestDetail
             row={selected}
             name={agentLabel(selected.agent_id)}
-            answerText={answers[selected.id] || ''}
+            answerText={selectedPending?.answer || answers[selected.id] || ''}
             draft={drafts[selected.id]}
-            pending={pending[selected.id]}
+            pending={selectedPending}
+            {earlierPending}
+            onverify={(body) => answer(selected, body)}
             {busy}
             sourceReady={!!checked && !error}
             {now}

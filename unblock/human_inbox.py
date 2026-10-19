@@ -174,13 +174,13 @@ class HumanInbox:
         names={g['agent_id']:g.get('name') or g['agent_id'] for g in reversed(data.get('grants',[])) if g.get('kind','agent')=='agent'}
         rows=data['requests'];items=[]
         for row in rows:
-            if not include_completed and row['state']=='completed':continue
+            if not include_completed and row['state'] in ('completed','withdrawn'):continue
             if agent_id and row['agent_id']!=agent_id:continue
             q=row['revisions'][0]['payload'];name=names.get(row['agent_id'],row['agent_id'])
             if not all(t in (name+' '+row['agent_id']+' '+canonical(q)).casefold() for t in query.casefold().split()):continue
             items.append({'request_id':row['id'],'agent_id':row['agent_id'],'agent_name':name,'created_at':row.get('created_at'),'state':row['state'],'decision':excerpt(q['need'],160),'context':excerpt(q.get('context',''),280),'recommendation':excerpt(q.get('recommendation',''),200),'question_versions':len(row['revisions'])})
         items.sort(key=lambda r:(r['created_at'] is None,r['created_at'] or '',r['agent_name']))
-        counts={'needs_you':sum(r['state'] in ('needs_you','conflict','answer_conflict','uncertain_action') for r in rows),'with_agents':sum(r['state'] in ('awaiting_pickup','acknowledged','resumed') for r in rows),'done':sum(r['state']=='completed' for r in rows)} if source=='checked' else None
+        counts={'needs_you':sum(r['state'] in ('needs_you','conflict','answer_conflict','uncertain_action') for r in rows),'with_agents':sum(r['state'] in ('awaiting_pickup','acknowledged','resumed') for r in rows),'done':sum(r['state'] in ('completed','withdrawn') for r in rows)} if source=='checked' else None
         return {'workspace_id':self.workspace_id,'source':source,'last_known':source!='checked' and bool(data['checked_at']),'checked_at':data['checked_at'],'counts':counts,'items':items,'pending_answers':self.pending_answers(),'error':error}
 
     def get_decision(self,request_id):
@@ -188,7 +188,7 @@ class HumanInbox:
         row=next((r for r in data['requests'] if r['id']==rid),None)
         if row is None:raise DomainError('decision_not_found',404)
         name=next((g.get('name') for g in data.get('grants',[]) if g['agent_id']==row['agent_id']),row['agent_id'])
-        return {'workspace_id':self.workspace_id,'source':'checked','checked_at':data['checked_at'],'agent_name':name,'request':row,'reviewed_snapshot':snapshot(row),'can_answer':len(row['revisions'])==1 and row['state']!='completed'}
+        return {'workspace_id':self.workspace_id,'source':'checked','checked_at':data['checked_at'],'agent_name':name,'request':row,'reviewed_snapshot':snapshot(row),'can_answer':len(row['revisions'])==1 and row['state'] not in ('completed','withdrawn')}
 
     def answer_decision(self,request_id,revision,reviewed_snapshot,answer,intent_id):
         with self.answer_lock():
@@ -215,7 +215,7 @@ class HumanInbox:
 
         match=observed(row)
         if prior and match:return finish(row,match)
-        current=len(row['revisions'])==1 and row['revisions'][0]['id']==rev and snapshot(row)==reviewed_snapshot and row['state']!='completed'
+        current=len(row['revisions'])==1 and row['revisions'][0]['id']==rev and snapshot(row)==reviewed_snapshot and row['state'] not in ('completed','withdrawn')
         if not current:
             if prior:return {'visibility':'pending','intent_id':intent_id,'request_id':rid,'reason':'Question or answers changed; original uncertain answer retained for reconciliation.'}
             raise DomainError('decision_changed_review_again',409)

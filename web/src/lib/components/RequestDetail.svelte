@@ -1,13 +1,15 @@
 <script>
   import { onMount } from 'svelte';
   import { requestView, waitingAge, excerpt } from '$lib/unblock-view.js';
-  /** @type {{row:any,name:string,answerText:string,draft:any,pending:any,busy:boolean,sourceReady:boolean,now:number,onedit:(value:string)=>void,onreview:()=>void,onsend:()=>void,onclose:()=>void}} */
+  /** @type {{row:any,name:string,answerText:string,draft:any,pending:any,earlierPending:any[],onverify:(body:any)=>void,busy:boolean,sourceReady:boolean,now:number,onedit:(value:string)=>void,onreview:()=>void,onsend:()=>void,onclose:()=>void}} */
   let {
     row,
     name,
     answerText,
     draft,
     pending,
+    earlierPending,
+    onverify,
     busy,
     sourceReady,
     now,
@@ -126,6 +128,19 @@
         </p>
       </section>
     {/if}
+    {#each earlierPending as original (original.intent_id)}<section class="verification">
+        <h3>Earlier answer needs verification</h3>
+        <p>
+          Its outcome is still uncertain. Answering this question does not withdraw the earlier
+          submission.
+        </p>
+        <blockquote>{original.answer}</blockquote>
+        <button
+          class="quiet-button"
+          disabled={busy || !sourceReady}
+          onclick={() => onverify(original)}>Verify earlier answer</button
+        >
+      </section>{/each}
     {#if row.state === 'awaiting_pickup'}<p class="pickup-note">
         Your answer is saved. Agent pickup has not been observed yet.
       </p>{/if}
@@ -140,11 +155,13 @@
             <span class="status-dot waiting"></span>
             <div>
               <strong
-                >{p.payload.stage === 'completed'
-                  ? 'Completed'
-                  : p.payload.stage === 'resumed'
-                    ? 'Work resumed'
-                    : 'Answer read'}</strong
+                >{p.payload.stage === 'withdrawn'
+                  ? 'No longer needed'
+                  : p.payload.stage === 'completed'
+                    ? 'Completed'
+                    : p.payload.stage === 'resumed'
+                      ? 'Work resumed'
+                      : 'Answer read'}</strong
               >
               <p>{p.payload.evidence}</p>
             </div>

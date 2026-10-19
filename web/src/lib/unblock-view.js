@@ -16,7 +16,8 @@ export function requestView(row) {
     awaiting_pickup: ['waiting', 'Awaiting pickup'],
     acknowledged: ['waiting', 'Answer read'],
     resumed: ['waiting', 'Working'],
-    completed: ['done', 'Completed']
+    completed: ['done', 'Completed'],
+    withdrawn: ['done', 'No longer needed']
   };
   const [lane, status] = states[row.state] || ['attention', 'Needs review'];
   const question = row.revisions[0]?.payload || {};

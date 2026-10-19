@@ -66,6 +66,13 @@ class HumanInboxTests(unittest.TestCase):
         self.assertTrue(result['can_answer']);self.assertEqual(result['request'],self.row)
         self.assertRegex(result['reviewed_snapshot'],r'^[a-f0-9]{64}$')
 
+    def test_withdrawn_request_is_reviewable_but_needs_no_human_answer(self):
+        self.row['state']='withdrawn';c=self.client()
+        self.assertEqual(c.inbox()['items'],[]);self.assertEqual(c.inbox()['counts']['done'],1)
+        self.assertEqual(len(c.inbox(include_completed=True)['items']),1)
+        detail=c.get_decision(RID);self.assertFalse(detail['can_answer'])
+        with self.assertRaises(DomainError):self.submit(c,detail)
+
     def test_verified_deployment_cannot_change_origin_with_a_retained_journal(self):
         c=self.client();c.inbox();self.calls.clear();self.project['domain']='different.my.fulcra.ai'
         with self.assertRaises(DomainError):self.client().inbox()
@@ -121,6 +128,17 @@ class HumanInboxTests(unittest.TestCase):
         self.assertEqual(result['visibility'],'pending')
         self.assertEqual(sum(op=='answer' for op,_ in self.calls),1)
         self.assertEqual(len(c.pending_answers()),1)
+
+    def test_fresh_reviewed_question_can_be_answered_while_prior_intent_stays_uncertain(self):
+        c=self.client();old=c.get_decision(RID);self.visible=False;self.lose_write=True
+        self.assertEqual(self.submit(c,old)['visibility'],'pending')
+        self.row['revisions'][0]['id']='66666666-6666-4666-a666-666666666666';self.lose_write=False;self.visible=True
+        current=c.get_decision(RID)
+        result=self.submit(c,current,revision=self.row['revisions'][0]['id'],intent_id='fresh-current-question')
+        self.assertEqual(result['visibility'],'visible')
+        pending=self.client().pending_answers();self.assertEqual(len(pending),1)
+        self.assertEqual(pending[0]['intent_id'],'stable-human-answer')
+        self.assertEqual(pending[0]['revision'],REV)
 
     def test_same_intent_cannot_change_answer_and_state_cannot_change_owner(self):
         c=self.client();reviewed=c.get_decision(RID);self.submit(c,reviewed)

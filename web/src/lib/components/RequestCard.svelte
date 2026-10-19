@@ -23,10 +23,15 @@
       ? new Date(since).toLocaleString()
       : 'This older record has no available timestamp'}
     ><span aria-hidden="true">◷</span>
-    {view.lane === 'done' ? 'Finished' : view.lane === 'waiting' ? 'With agent' : 'Waiting'} · {view.lane ===
-    'done'
-      ? row.completed_at
-        ? new Date(row.completed_at).toLocaleDateString()
+    {row.state === 'withdrawn'
+      ? 'Closed'
+      : view.lane === 'done'
+        ? 'Finished'
+        : view.lane === 'waiting'
+          ? 'With agent'
+          : 'Waiting'} · {view.lane === 'done'
+      ? row.withdrawn_at || row.completed_at
+        ? new Date(row.withdrawn_at || row.completed_at).toLocaleDateString()
         : 'date unknown'
       : waitingAge(since, now)}</span
   >

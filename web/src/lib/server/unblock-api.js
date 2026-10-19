@@ -192,6 +192,7 @@ export function createService(config) {
         const event={...base,payload:{revision,answer:text(body,'answer',16000),responder:user.userid}};
         const retry=canonicalRecord(event);
         if(rows.some(r=>r.id===retry.id && r.note===retry.note))return {record_id:retry.id,request_id,visibility:'visible'};
+        if(request.state==='withdrawn')throw new Error('Request withdrawn; no new answer needed');
         if(body.reviewed_snapshot!==undefined && (!/^[a-f0-9]{64}$/.test(body.reviewed_snapshot) || request.revisions.length!==1 || request.revisions[0].id!==revision || decisionSnapshot(request)!==body.reviewed_snapshot))throw new Error('Decision changed; review again');
         return publish(token,event);
       }
@@ -203,7 +204,9 @@ export function createService(config) {
           const retry=canonicalRecord({...base,payload:{revision,stage,evidence,answers:[...answers].sort(),reconciled:body.reconciled===true}});
           if(rows.some(r=>r.id===retry.id && r.note===retry.note)) return {record_id:retry.id,request_id,visibility:'visible'};
         }
-        if (!['acknowledged','resumed','completed'].includes(stage) || !Array.isArray(answers) || answers.length===0 || new Set(answers).size!==answers.length || answers.some(a=>!request.answers.some((/** @type {any} */ r)=>r.id===a)) || request.revisions.length!==1 || request.revisions[0].id!==revision || answers.length!==request.answers.length) throw new Error('Current question and complete answer set required');
+        if(request.state==='withdrawn')throw new Error('Request withdrawn; revise it before reporting new progress');
+        if (!['acknowledged','resumed','completed','withdrawn'].includes(stage) || !Array.isArray(answers) || (stage!=='withdrawn' && answers.length===0) || new Set(answers).size!==answers.length || answers.some(a=>!request.answers.some((/** @type {any} */ r)=>r.id===a)) || request.revisions.length!==1 || request.revisions[0].id!==revision || answers.length!==request.answers.length) throw new Error('Current question and complete answer set required');
+        if(stage==='withdrawn' && request.uncertain_actions.length)throw new Error('Reconcile uncertain actions before withdrawal');
         if (answers.length>1 && body.reconciled!==true) throw new Error('Conflicting answers require explicit reconciliation');
         return publish(token,{...base,payload:{revision,stage,evidence,answers:[...answers].sort(),reconciled:body.reconciled===true}});
       }

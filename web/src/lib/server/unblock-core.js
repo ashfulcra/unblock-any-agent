@@ -63,13 +63,14 @@ export function projectEvents(records) {
     if (current && answers.length && progress.length) {
       state = ['completed','resumed','acknowledged'].find(stage => progress.some((/** @type {any} */ e) => e.payload.stage === stage)) || state;
     }
+    if(current && progress.some((/** @type {any} */ e)=>e.payload.stage==='withdrawn'))state='withdrawn';
     if (uncertain_actions.length) state = 'uncertain_action';
     const delivery_history=list.filter((/** @type {any} */ e)=>e.kind==='delivery');
     const deliveries=delivery_history.filter((/** @type {any} */ e)=>current && e.payload.revision===current.id && canonical([...e.payload.answers].sort())===canonical(answerIds));
     const firstDate=(/** @type {any[]} */ rows)=>rows.map(e=>e.recorded_at).filter(Boolean).sort((a,b)=>Date.parse(a)-Date.parse(b))[0] || null;
     const roots=history.filter((/** @type {any} */ e)=>!(e.payload.parents || []).length);
     const created_at=roots.length && roots.every((/** @type {any} */ e)=>e.recorded_at)?firstDate(roots):null;
-    return { id, agent_id, created_at,updated_at:firstDate(revisions),answered_at:firstDate(answers),completed_at:firstDate(progress.filter((/** @type {any} */ e)=>e.payload.stage==='completed')), revisions, history, answers, stale_answers, progress, progress_history:list.filter((/** @type {any} */ e)=>e.kind==='progress'), delivery_history, deliveries, actions:list.filter((/** @type {any} */ e)=>e.kind==='action'), settlements:list.filter((/** @type {any} */ e)=>e.kind==='settle'), uncertain_actions, state };
+    return { id, agent_id, created_at,updated_at:firstDate(revisions),answered_at:firstDate(answers),completed_at:firstDate(progress.filter((/** @type {any} */ e)=>e.payload.stage==='completed')),withdrawn_at:firstDate(progress.filter((/** @type {any} */ e)=>e.payload.stage==='withdrawn')), revisions, history, answers, stale_answers, progress, progress_history:list.filter((/** @type {any} */ e)=>e.kind==='progress'), delivery_history, deliveries, actions:list.filter((/** @type {any} */ e)=>e.kind==='action'), settlements:list.filter((/** @type {any} */ e)=>e.kind==='settle'), uncertain_actions, state };
   });
 }
 /** @param {any} grant @param {string} key */

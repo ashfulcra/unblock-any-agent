@@ -11,6 +11,14 @@ const answer = (id, text='blue', revision=record(request).id) => record({ schema
 /** @param {string[]} answers */
 const progress = (answers, stage='resumed') => record({schema:'unblock/1',intent_id:'progress-'+answers.join(),kind:'progress',request_id:'req-1',agent_id:'alpha',payload:{revision:record(request).id,answers,stage,evidence:'Read back applied color'}});
 
+test('withdrawal closes only its reviewed snapshot and never hides a later answer or uncertain effect',()=>{
+ const q=record(request),w=progress([],'withdrawn');
+ assert.equal(projectEvents([q,w])[0].state,'withdrawn');
+ assert.equal(projectEvents([q,w,answer('concurrent-answer')])[0].state,'awaiting_pickup');
+ const action=record({schema:'unblock/1',intent_id:'uncertain',kind:'action',request_id:'req-1',agent_id:'alpha',payload:{effect:'Check first'}});
+ assert.equal(projectEvents([q,w,action])[0].state,'uncertain_action');
+});
+
 test('display timestamps come from retained source metadata without changing signed record identity',()=>{
  const r={...record(request),recorded_at:'2026-10-17T12:00:00Z'};
  const a={...answer('time-answer'),recorded_at:'2026-10-19T12:00:00Z'};

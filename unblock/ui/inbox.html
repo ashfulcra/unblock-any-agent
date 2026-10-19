@@ -351,6 +351,7 @@
         acknowledged: "Answer read",
         resumed: "Working",
         completed: "Completed",
+        withdrawn: "No longer needed",
       };
       const lane = (state) =>
         [
@@ -360,7 +361,7 @@
           "uncertain_action",
         ].includes(state)
           ? "needs_you"
-          : state === "completed"
+          : ["completed", "withdrawn"].includes(state)
             ? "done"
             : "with_agents";
       let last = null,
@@ -375,6 +376,18 @@
       const drafts = new Map(),
         pending = new Map(),
         calls = new Map();
+      const pendingFor = (id) =>
+        [...pending.values()].filter((p) => p.request_id === id);
+      const currentIntent = () =>
+        pendingFor(selected).find(
+          (p) =>
+            p.revision === detail?.request.revisions[0]?.id &&
+            p.reviewed_snapshot === detail?.reviewed_snapshot,
+        );
+      function removePending(intent) {
+        pending.delete(intent.intent_id);
+        save("pending", intent.intent_id, null);
+      }
       let sequence = 0;
       let selectionVersion = 0;
       const age = (value) => {
@@ -410,13 +423,25 @@
         }
         workspace = id;
         try {
-          for (let i = 0; i < sessionStorage.length; i++) {
-            const key = sessionStorage.key(i),
-              prefix = `unblock-human:${workspace}:`;
+          const keys = Array.from({ length: sessionStorage.length }, (_, i) =>
+            sessionStorage.key(i),
+          );
+          for (const key of keys) {
+            const prefix = `unblock-human:${workspace}:`;
             if (key?.startsWith(prefix)) {
-              const [kind, id] = key.slice(prefix.length).split(":");
+              const rest = key.slice(prefix.length),
+                separator = rest.indexOf(":"),
+                kind = rest.slice(0, separator),
+                id = rest.slice(separator + 1);
               const value = JSON.parse(sessionStorage.getItem(key));
-              (kind === "draft" ? drafts : pending).set(id, value);
+              if (kind === "draft") drafts.set(id, value);
+              else if (kind === "pending" && value.intent_id) {
+                pending.set(value.intent_id, value);
+                if (id !== value.intent_id) {
+                  sessionStorage.removeItem(key);
+                  save("pending", value.intent_id, value);
+                }
+              }
             }
           }
         } catch {}
@@ -468,8 +493,8 @@
         last = data;
         ready = data.source === "checked";
         for (const p of data.pending_answers || []) {
-          pending.set(p.request_id, p);
-          save("pending", p.request_id, p);
+          pending.set(p.intent_id, p);
+          save("pending", p.intent_id, p);
         }
         if (first && pending.size) tab = "pending";
         if (!ready)
@@ -478,7 +503,10 @@
               ? "Connection unavailable. Showing last-known work; current status is unknown."
               : "Your work is unavailable. Pending decisions are unknown until the connection recovers.",
           );
-        else if (pending.size) message(`${pending.size} saved decision intent(s) need verification. Open Verify answers to reconcile the original submission.`);
+        else if (pending.size)
+          message(
+            `${pending.size} saved decision intent(s) need verification. Open Verify answers to reconcile the original submission.`,
+          );
         renderOverview();
         if (detail) renderDetail();
       }
@@ -504,7 +532,7 @@
         ]) {
           const b = el(
             "button",
-            `${id === "pending" ? pending.size : counts?.[id] ?? "—"}  ${title}`,
+            `${id === "pending" ? pending.size : (counts?.[id] ?? "—")}  ${title}`,
             id === tab ? "active" : "",
           );
           b.onclick = () => {
@@ -529,7 +557,9 @@
           .filter(Boolean);
         const rows = last.items.filter(
           (i) =>
-            (tab === "pending" ? pending.has(i.request_id) : lane(i.state) === tab) &&
+            (tab === "pending"
+              ? pendingFor(i.request_id).length > 0
+              : lane(i.state) === tab) &&
             (!$("agents").value || i.agent_id === $("agents").value) &&
             terms.every((t) =>
               [i.agent_name, i.agent_id, i.decision, i.context]
@@ -546,7 +576,7 @@
             el("span", item.agent_name, "agent"),
             el(
               "span",
-              `${item.state === "completed" ? "Requested" : "Waiting"} · ${age(item.created_at)}`,
+              `${["completed", "withdrawn"].includes(item.state) ? "Requested" : "Waiting"} · ${age(item.created_at)}`,
               "age",
             ),
             el("strong", item.decision, "question"),
@@ -624,9 +654,23 @@
           for (const action of row.uncertain_actions)
             section("Verify before repeating", action.payload.effect);
         }
-        if (detail.can_answer || pending.has(selected)) {
+        const matchingIntent = currentIntent();
+        for (const earlier of pendingFor(selected).filter(
+          (p) => p !== matchingIntent,
+        )) {
+          section(
+            "Earlier answer needs verification",
+            "Its outcome is still uncertain. Answering the current question does not withdraw this earlier submission.",
+          );
+          panel.append(el("blockquote", earlier.answer));
+          const verify = el("button", "Verify earlier answer", "quiet");
+          verify.disabled = busy || !ready || !interactive;
+          verify.onclick = () => sendDecision(earlier);
+          panel.append(verify);
+        }
+        if (detail.can_answer || matchingIntent) {
           const draft = drafts.get(selected),
-            intent = pending.get(selected);
+            intent = matchingIntent;
           section(
             row.answers.length ? "Add a clarification" : "Your decision",
             "",
@@ -703,7 +747,7 @@
             (!intent &&
               (!area.value.trim() ||
                 draft?.reviewed_snapshot !== detail.reviewed_snapshot));
-          send.onclick = sendDecision;
+          send.onclick = () => sendDecision();
           panel.append(
             send,
             el(
@@ -736,11 +780,13 @@
           );
         for (const p of row.progress || [])
           section(
-            p.payload.stage === "completed"
-              ? "Completed"
-              : p.payload.stage === "resumed"
-                ? "Work resumed"
-                : "Answer read",
+            p.payload.stage === "withdrawn"
+              ? "No longer needed"
+              : p.payload.stage === "completed"
+                ? "Completed"
+                : p.payload.stage === "resumed"
+                  ? "Work resumed"
+                  : "Answer read",
             p.payload.evidence,
           );
         const history = el("details");
@@ -758,13 +804,22 @@
         });
       }
       async function refresh() {
-        const requestId = selected, version = selectionVersion;
+        const requestId = selected,
+          version = selectionVersion;
         try {
           const data = await tool("show_inbox", { include_completed: true });
           applyInbox(data);
-          if (requestId && selected === requestId && version === selectionVersion && ready) {
-            const result = await tool("get_decision", { request_id: requestId });
-            if (selected === requestId && version === selectionVersion) applyDetail(result);
+          if (
+            requestId &&
+            selected === requestId &&
+            version === selectionVersion &&
+            ready
+          ) {
+            const result = await tool("get_decision", {
+              request_id: requestId,
+            });
+            if (selected === requestId && version === selectionVersion)
+              applyDetail(result);
           }
         } catch (error) {
           ready = false;
@@ -795,27 +850,34 @@
           .find((b) => b.dataset.request === id)
           ?.focus();
       }
-      async function sendDecision() {
+      async function sendDecision(savedIntent = null) {
         if (busy || !selected) return;
-        const requestId = selected, version = selectionVersion;
-        let intent = pending.get(requestId);
+        const requestId = savedIntent?.request_id || selected,
+          version = selectionVersion;
+        let intent = savedIntent || currentIntent();
         if (!intent) {
           const draft = drafts.get(requestId);
           if (!draft || draft.reviewed_snapshot !== detail.reviewed_snapshot)
             return;
           intent = { ...draft, intent_id: crypto.randomUUID() };
-          pending.set(requestId, intent);
-          save("pending", requestId, intent);
+          pending.set(intent.intent_id, intent);
+          save("pending", intent.intent_id, intent);
         }
         busy = true;
         renderDetail();
         try {
           const outcome = await tool("answer_decision", intent);
           if (outcome.visibility === "visible") {
-            pending.delete(requestId);
-            drafts.delete(requestId);
-            save("pending", requestId, null);
-            save("draft", requestId, null);
+            removePending(intent);
+            const draft = drafts.get(requestId);
+            if (
+              draft?.revision === intent.revision &&
+              draft?.reviewed_snapshot === intent.reviewed_snapshot &&
+              draft?.answer === intent.answer
+            ) {
+              drafts.delete(requestId);
+              save("draft", requestId, null);
+            }
             message(
               outcome.current_question === false
                 ? "Saved against an earlier question. Review the current decision."
@@ -823,8 +885,7 @@
             );
           } else {
             if (outcome.visibility === "rejected") {
-              pending.delete(requestId);
-              save("pending", requestId, null);
+              removePending(intent);
             }
             message(outcome.reason);
           }
@@ -835,15 +896,17 @@
               error.message,
             )
           ) {
-            pending.delete(requestId);
-            save("pending", requestId, null);
+            removePending(intent);
           }
           ready = false;
           message(error.message);
           try {
             if (selected === requestId && version === selectionVersion) {
-              const result = await tool("get_decision", { request_id: requestId });
-              if (selected === requestId && version === selectionVersion) applyDetail(result);
+              const result = await tool("get_decision", {
+                request_id: requestId,
+              });
+              if (selected === requestId && version === selectionVersion)
+                applyDetail(result);
             }
           } catch {}
         } finally {
@@ -872,7 +935,11 @@
         if (m.method === "ui/notifications/tool-result") {
           const data = m.params?.structuredContent;
           if (data?.items) applyInbox(data);
-          else if (data?.request && (selectionVersion === 0 || selected === data.request.id)) applyDetail(data);
+          else if (
+            data?.request &&
+            (selectionVersion === 0 || selected === data.request.id)
+          )
+            applyDetail(data);
         }
         if (
           m.method === "ui/notifications/host-context-changed" &&
@@ -905,7 +972,7 @@
         if (interactive && !busy) refresh();
       }, 15000);
       rpc("ui/initialize", {
-        appInfo: { name: "unblock-inbox", version: "0.6.0" },
+        appInfo: { name: "unblock-inbox", version: "0.6.1" },
         appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
         protocolVersion: "2026-01-26",
       })
