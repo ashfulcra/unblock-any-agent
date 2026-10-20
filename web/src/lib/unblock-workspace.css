@@ -720,6 +720,19 @@
 .decision-context {
   margin-bottom: 23px;
 }
+.progress-summary {
+  border-left: 2px solid var(--mint);
+  padding-left: 14px;
+  margin: 0 0 24px;
+}
+.progress-summary h3 {
+  color: var(--mint);
+}
+.progress-summary .progress-time {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 6px;
+}
 .recommendation {
   padding: 14px 16px;
   border-radius: 8px;

@@ -28,7 +28,7 @@ def age(value):
 
 def build_server(config,*,client=None):
     inbox=client or HumanInbox.from_file(config)
-    server=MCPServer('unblock-inbox',version='0.6.1',instructions='Human decision inbox. Show actual agent identity, original waiting time, concise decision and relevant context. Read the full decision before saving only the human’s actual answer. Exact reviewed snapshots prevent silently applying a decision to changed questions. Preserve pending answer intents and retry them unchanged. A saved answer never proves worker pickup. This explicit owner connection is separate from worker grants; it cannot enroll, renew or execute agent work.',log_level='ERROR')
+    server=MCPServer('unblock-inbox',version='0.6.2',instructions='Human decision inbox. Show actual agent identity, original waiting time, concise decision and relevant context. Read the full decision before saving only the human’s actual answer. Exact reviewed snapshots prevent silently applying a decision to changed questions. Preserve pending answer intents and retry them unchanged. A saved answer never proves worker pickup. This explicit owner connection is separate from worker grants; it cannot enroll, renew or execute agent work.',log_level='ERROR')
     read=ToolAnnotations(read_only_hint=True,destructive_hint=False,open_world_hint=False)
     write=ToolAnnotations(read_only_hint=False,destructive_hint=False,open_world_hint=False)
 

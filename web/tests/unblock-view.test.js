@@ -5,7 +5,8 @@ import {
   filterRequests,
   groupAgents,
   waitingAge,
-  sortRequests
+  sortRequests,
+  progressView
 } from '../src/lib/unblock-view.js';
 
 /** @param {string} id @param {string} state @param {any} [extra] */
@@ -99,4 +100,33 @@ test('longest waiting sorts known original request dates before unknown dates wi
     rows.map((r) => r.id),
     ['new', 'unknown', 'old']
   );
+});
+
+test('progress summary uses evidence for the current observed stage, not arrival order or an older stage', () => {
+  const progress = [
+    {
+      recorded_at: '2026-10-20T12:00:00Z',
+      payload: { stage: 'resumed', evidence: 'Latest verified action.' }
+    },
+    {
+      recorded_at: '2026-10-20T10:00:00Z',
+      payload: { stage: 'resumed', evidence: 'Earlier action.' }
+    },
+    {
+      recorded_at: '2026-10-20T13:00:00Z',
+      payload: { stage: 'acknowledged', evidence: 'Read receipt.' }
+    }
+  ];
+  const before = JSON.stringify(progress);
+  const result = progressView(row('1', 'resumed', { progress }));
+  assert.ok(result);
+  assert.equal(result.title, 'Work resumed');
+  assert.equal(result.evidence, 'Latest verified action.');
+  assert.equal(JSON.stringify(progress), before);
+  const awaiting = progressView(row('2', 'awaiting_pickup'));
+  assert.ok(awaiting);
+  assert.equal(awaiting.title, 'Awaiting agent pickup');
+  assert.match(awaiting.evidence, /pickup has not been observed/);
+  assert.equal(progressView(row('3', 'needs_you')), null);
+  assert.equal(progressView(row('4', 'uncertain_action', { progress })), null);
 });

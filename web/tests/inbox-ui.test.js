@@ -10,6 +10,7 @@ const script = fs
   .split('</script>')[0];
 function harness(stored = new Map()) {
   const nodes = new Map();
+  const listeners = new Map();
   class Node {
     constructor(tag = 'div', text = '') {
       this.tag = tag;
@@ -68,7 +69,10 @@ function harness(stored = new Map()) {
       activeElement: null
     },
     sessionStorage: storage,
-    window: { parent: { postMessage() {} }, addEventListener() {} },
+    window: {
+      parent: { postMessage() {} },
+      addEventListener: (name, fn) => listeners.set(name, fn)
+    },
     Option: class extends Node {},
     crypto: { randomUUID: () => 'fresh-intent' },
     setTimeout() {},
@@ -82,6 +86,7 @@ function harness(stored = new Map()) {
     context,
     nodes,
     stored,
+    hostMessage: (data) => listeners.get('message')({ source: context.window.parent, data }),
     run: (code) => vm.runInContext(code, context),
     set: (name, value) => {
       context[name] = value;
@@ -199,4 +204,85 @@ test('verifying an earlier answer preserves the fresh draft and unrelated reques
   assert.equal(h.run('drafts.get("request-A").answer'), fresh.answer);
   assert.equal(h.run('drafts.get("request-B").answer'), 'B draft');
   assert.equal(h.run('pending.size'), 0);
+});
+
+const textOf = (node) => [node.textContent, ...node.children.map(textOf)].join(' ');
+test('completed and withdrawn details keep the request date without claiming an ongoing wait', () => {
+  for (const state of ['completed', 'withdrawn']) {
+    const h = harness();
+    h.set('rowInput', { ...row, state, created_at: '2026-10-16T12:00:00Z', progress: [] });
+    h.run('selected="request-A";detail={request:rowInput,can_answer:false};renderDetail()');
+    const header = textOf(h.nodes.get('detail').children[0]);
+    assert.match(header, /Requested/);
+    assert.doesNotMatch(header, /Waiting/);
+    assert.match(header, state === 'completed' ? /Completed/ : /No longer needed/);
+  }
+});
+
+test('verified current progress is visible before context and answer controls', () => {
+  const h = harness();
+  h.set('rowInput', {
+    ...row,
+    state: 'resumed',
+    progress: [
+      {
+        recorded_at: '2026-10-20T12:00:00Z',
+        payload: { stage: 'resumed', evidence: 'Deployment read back successfully.' }
+      },
+      {
+        recorded_at: '2026-10-20T11:00:00Z',
+        payload: { stage: 'acknowledged', evidence: 'Earlier read receipt.' }
+      }
+    ]
+  });
+  h.run('selected="request-A";detail={request:rowInput,can_answer:true};renderDetail()');
+  const children = h.nodes.get('detail').children;
+  const summary = children.findIndex((n) => n.className === 'progress-summary');
+  assert.ok(summary >= 0);
+  assert.match(textOf(children[summary]), /Deployment read back successfully/);
+  assert.ok(summary < children.findIndex((n) => n.textContent === 'What you need to know'));
+  assert.ok(summary < children.findIndex((n) => n.tag === 'textarea'));
+  assert.doesNotMatch(textOf(children[summary]), /Earlier read receipt/);
+});
+
+test('saved answer status never claims agent pickup and full long context remains available', () => {
+  const h = harness();
+  h.set('rowInput', {
+    ...row,
+    state: 'awaiting_pickup',
+    progress: [],
+    revisions: [
+      {
+        ...row.revisions[0],
+        payload: { ...row.revisions[0].payload, context: 'Retained full context. '.repeat(50) }
+      }
+    ]
+  });
+  h.run('selected="request-A";detail={request:rowInput,can_answer:true};renderDetail()');
+  const panel = h.nodes.get('detail');
+  const summary = panel.children.find((n) => n.className === 'progress-summary');
+  assert.match(textOf(summary), /pickup has not been observed/);
+  assert.doesNotMatch(textOf(summary), /Work resumed|Completed/);
+  assert.ok(panel.querySelectorAll('details').some((n) => textOf(n).includes(rowInputContext())));
+  function rowInputContext() {
+    return 'Retained full context. '.repeat(50);
+  }
+});
+
+test('fullscreen host changes apply without losing the current theme', () => {
+  const h = harness();
+  h.context.document.documentElement.dataset.theme = 'light';
+  h.hostMessage({
+    jsonrpc: '2.0',
+    method: 'ui/notifications/host-context-changed',
+    params: { displayMode: 'fullscreen' }
+  });
+  assert.equal(h.context.document.documentElement.dataset.displayMode, 'fullscreen');
+  assert.equal(h.context.document.documentElement.dataset.theme, 'light');
+  h.hostMessage({
+    jsonrpc: '2.0',
+    method: 'ui/notifications/host-context-changed',
+    params: { displayMode: 'inline' }
+  });
+  assert.equal(h.context.document.documentElement.dataset.displayMode, 'inline');
 });

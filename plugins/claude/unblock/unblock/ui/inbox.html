@@ -39,6 +39,10 @@
         overflow: auto;
         padding: 22px;
       }
+      :root[data-display-mode="fullscreen"] main {
+        max-height: none;
+        min-height: 100dvh;
+      }
       button,
       input,
       select,
@@ -227,6 +231,20 @@
         background: var(--bg);
         border-radius: 6px;
       }
+      .progress-summary {
+        border-left: 2px solid var(--accent);
+        padding-left: 14px;
+        margin: 0 0 24px;
+      }
+      .progress-summary h3 {
+        color: var(--accent);
+        margin-top: 0;
+      }
+      .detail .progress-time {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
       .detail textarea {
         width: 100%;
         min-height: 110px;
@@ -292,6 +310,10 @@
         }
         h1 {
           font-size: 20px;
+        }
+        .detail header {
+          align-items: flex-start;
+          flex-direction: column;
         }
       }
     </style>
@@ -364,6 +386,43 @@
           : ["completed", "withdrawn"].includes(state)
             ? "done"
             : "with_agents";
+      const excerpt = (value, limit) => {
+        const text = (value || "").replace(/\s+/g, " ").trim();
+        return text.length <= limit
+          ? text
+          : text.slice(0, limit).replace(/\s+\S*$/, "") + "…";
+      };
+      const timing = (row) =>
+        lane(row.state) === "needs_you"
+          ? `Waiting · ${age(row.created_at)}`
+          : `Requested · ${Number.isFinite(Date.parse(row.created_at || "")) ? new Date(row.created_at).toLocaleString() : "date unknown"}`;
+      function progressView(row) {
+        const titles = {
+          awaiting_pickup: "Awaiting agent pickup",
+          acknowledged: "Answer read",
+          resumed: "Work resumed",
+          completed: "Completed",
+          withdrawn: "No longer needed",
+        };
+        const title = titles[row.state];
+        if (!title) return null;
+        const events = (row.progress || [])
+          .filter((p) => p.payload.stage === row.state)
+          .sort(
+            (a, b) =>
+              (Date.parse(b.recorded_at || "") || 0) -
+              (Date.parse(a.recorded_at || "") || 0),
+          );
+        return {
+          title,
+          evidence:
+            events[0]?.payload.evidence ||
+            (row.state === "awaiting_pickup"
+              ? "Your decision is saved. Agent pickup has not been observed yet."
+              : "No additional progress details supplied."),
+          at: events[0]?.recorded_at || null,
+        };
+      }
       let last = null,
         detail = null,
         selected = "",
@@ -574,11 +633,7 @@
           b.dataset.request = item.request_id;
           b.append(
             el("span", item.agent_name, "agent"),
-            el(
-              "span",
-              `${["completed", "withdrawn"].includes(item.state) ? "Requested" : "Waiting"} · ${age(item.created_at)}`,
-              "age",
-            ),
+            el("span", timing(item), "age"),
             el("strong", item.decision, "question"),
             el("span", item.context, "context"),
             el("span", `${labels[item.state] || "Needs review"}  ↗`, "state"),
@@ -608,6 +663,17 @@
           el("p", text || "No additional context supplied."),
         );
       }
+      function compactSection(title, text, limit, parent = $("detail")) {
+        section(title, excerpt(text, limit), parent);
+        if ((text || "").length > limit) {
+          const more = el("details");
+          more.append(
+            el("summary", "Read full " + title.toLocaleLowerCase()),
+            el("p", text),
+          );
+          parent.append(more);
+        }
+      }
       function renderDetail() {
         if (!detail || !selected) return;
         const row = detail.request,
@@ -623,7 +689,7 @@
           el("strong", detail.agent_name || row.agent_id, "agent"),
           el(
             "span",
-            `Waiting · ${age(row.created_at)} · ${labels[row.state] || row.state}`,
+            `${timing(row)} · ${labels[row.state] || row.state}`,
             "age",
           ),
         );
@@ -633,9 +699,29 @@
         panel.append(head);
         for (const q of row.revisions) {
           panel.append(el("h2", q.payload.need));
-          section("What you need to know", q.payload.context);
+          const progress = progressView(row);
+          if (progress && row.revisions.length === 1) {
+            const summary = el("section", undefined, "progress-summary");
+            summary.setAttribute("aria-label", "Last observed agent progress");
+            compactSection(progress.title, progress.evidence, 220, summary);
+            if (progress.at)
+              summary.append(
+                el(
+                  "p",
+                  "Observed " + new Date(progress.at).toLocaleString(),
+                  "progress-time",
+                ),
+              );
+            panel.append(summary);
+          }
+          compactSection("What you need to know", q.payload.context, 400);
           const rec = el("div", undefined, "recommendation");
-          section("Agent’s recommendation", q.payload.recommendation, rec);
+          compactSection(
+            "Agent’s recommendation",
+            q.payload.recommendation,
+            300,
+            rec,
+          );
           panel.append(rec);
           const next = el("details");
           next.append(
@@ -770,14 +856,13 @@
               "message",
             ),
           );
-        if (row.state === "awaiting_pickup")
-          panel.append(
-            el(
-              "p",
-              "Your answer is saved. Agent pickup has not been observed yet.",
-              "message",
-            ),
-          );
+        const progressHistory = el("details");
+        progressHistory.append(
+          el(
+            "summary",
+            `Agent progress history (${row.progress?.length || 0})`,
+          ),
+        );
         for (const p of row.progress || [])
           section(
             p.payload.stage === "withdrawn"
@@ -788,7 +873,9 @@
                   ? "Work resumed"
                   : "Answer read",
             p.payload.evidence,
+            progressHistory,
           );
+        if (row.progress?.length) panel.append(progressHistory);
         const history = el("details");
         history.append(el("summary", "Earlier context & activity"));
         for (const q of row.history || []) {
@@ -941,11 +1028,12 @@
           )
             applyDetail(data);
         }
-        if (
-          m.method === "ui/notifications/host-context-changed" &&
-          m.params?.theme
-        )
-          document.documentElement.dataset.theme = m.params.theme;
+        if (m.method === "ui/notifications/host-context-changed") {
+          if (m.params?.theme)
+            document.documentElement.dataset.theme = m.params.theme;
+          if (m.params?.displayMode)
+            document.documentElement.dataset.displayMode = m.params.displayMode;
+        }
         if (m.method === "ui/resource-teardown") {
           clearInterval(poll);
           for (const call of calls.values()) {
@@ -972,13 +1060,15 @@
         if (interactive && !busy) refresh();
       }, 15000);
       rpc("ui/initialize", {
-        appInfo: { name: "unblock-inbox", version: "0.6.1" },
+        appInfo: { name: "unblock-inbox", version: "0.6.2" },
         appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
         protocolVersion: "2026-01-26",
       })
         .then((host) => {
           document.documentElement.dataset.theme =
             host.hostContext?.theme || "dark";
+          document.documentElement.dataset.displayMode =
+            host.hostContext?.displayMode || "inline";
           interactive = !!host.hostCapabilities?.serverTools;
           notify("ui/notifications/initialized");
           if (interactive) refresh();

@@ -29,6 +29,35 @@ export function requestView(row) {
     recommendation: excerpt(question.recommendation, 150)
   };
 }
+/** Only the folded current stage counts as observed progress. Array arrival
+ * order and a saved human answer never imply that an agent resumed.
+ * @param {any} row */
+export function progressView(row) {
+  const titles = /** @type {Record<string,string>} */ ({
+    awaiting_pickup: 'Awaiting agent pickup',
+    acknowledged: 'Answer read',
+    resumed: 'Work resumed',
+    completed: 'Completed',
+    withdrawn: 'No longer needed'
+  });
+  const title = titles[row.state];
+  if (!title) return null;
+  const events = (row.progress || [])
+    .filter((/** @type {any} */ p) => p.payload.stage === row.state)
+    .sort(
+      (/** @type {any} */ a, /** @type {any} */ b) =>
+        (Date.parse(b.recorded_at || '') || 0) - (Date.parse(a.recorded_at || '') || 0)
+    );
+  return {
+    title,
+    evidence:
+      events[0]?.payload.evidence ||
+      (row.state === 'awaiting_pickup'
+        ? 'Your decision is saved. Agent pickup has not been observed yet.'
+        : 'No additional progress details supplied.'),
+    at: events[0]?.recorded_at || null
+  };
+}
 /** @param {any[]} rows @param {{query?:string,agent?:string,lane?:string,grants?:any[]}} [options] */
 export function filterRequests(rows, { query = '', agent = '', lane = '', grants = [] } = {}) {
   const terms = query.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);

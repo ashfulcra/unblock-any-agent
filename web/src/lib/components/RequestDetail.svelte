@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { requestView, waitingAge, excerpt } from '$lib/unblock-view.js';
+  import { requestView, waitingAge, excerpt, progressView } from '$lib/unblock-view.js';
   /** @type {{row:any,name:string,answerText:string,draft:any,pending:any,earlierPending:any[],onverify:(body:any)=>void,busy:boolean,sourceReady:boolean,now:number,onedit:(value:string)=>void,onreview:()=>void,onsend:()=>void,onclose:()=>void}} */
   let {
     row,
@@ -19,6 +19,7 @@
     onclose
   } = $props();
   const view = $derived(requestView(row));
+  const progress = $derived(progressView(row));
   /** @type {HTMLElement|undefined} */ let panel;
   onMount(() => {
     const previous = document.activeElement;
@@ -62,6 +63,19 @@
     </p>
     {#each row.revisions as revision}
       <h2>{revision.payload.need}</h2>
+      {#if progress && row.revisions.length === 1}
+        <section class="progress-summary" aria-label="Last observed agent progress">
+          <h3>{progress.title}</h3>
+          <p>{excerpt(progress.evidence, 220)}</p>
+          {#if progress.at}<p class="progress-time">
+              Observed {new Date(progress.at).toLocaleString()}
+            </p>{/if}
+          {#if progress.evidence.length > 220}<details class="detail-section">
+              <summary>Read full progress</summary>
+              <p>{progress.evidence}</p>
+            </details>{/if}
+        </section>
+      {/if}
       <section class="decision-context">
         <h3>What you need to know</h3>
         <p>{excerpt(revision.payload.context, 400)}</p>
@@ -141,16 +155,13 @@
           onclick={() => onverify(original)}>Verify earlier answer</button
         >
       </section>{/each}
-    {#if row.state === 'awaiting_pickup'}<p class="pickup-note">
-        Your answer is saved. Agent pickup has not been observed yet.
-      </p>{/if}
     {#if row.uncertain_actions.length}<section class="verification">
         <h3>Action needs verification</h3>
         {#each row.uncertain_actions as a}<p>{a.payload.effect}</p>{/each}
         <p class="answer-help">Check what happened before repeating this action.</p>
       </section>{/if}
-    {#if row.progress.length}<section class="progress-section">
-        <h3>What happened next</h3>
+    {#if row.progress.length}<details class="detail-section">
+        <summary>Agent progress history ({row.progress.length})</summary>
         {#each row.progress as p}<div class="progress-entry">
             <span class="status-dot waiting"></span>
             <div>
@@ -166,7 +177,7 @@
               <p>{p.payload.evidence}</p>
             </div>
           </div>{/each}
-      </section>{/if}
+      </details>{/if}
     <details class="detail-section">
       <summary>Earlier context & activity</summary>
       {#each row.history as h}<p>{h.payload.need}</p>
