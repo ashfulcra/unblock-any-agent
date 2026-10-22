@@ -407,6 +407,47 @@ test('verifying an earlier answer preserves the fresh draft and unrelated reques
 });
 
 const textOf = (node) => [node.textContent, ...node.children.map(textOf)].join(' ');
+test('latest work keeps the newest completed delivery visible when no agent is working', () => {
+  const h = harness();
+  h.set('inboxInput', {
+    source: 'checked',
+    work_source: 'checked',
+    counts: { needs_you: 0, with_agents: 0, done: 0 },
+    work_counts: { working: 0, investigate: 0, done: 2 },
+    items: [],
+    work_items: [
+      {
+        ...workItem,
+        expectation_id: 'old',
+        state: 'completed',
+        updates: [
+          {
+            ...workItem.updates[0],
+            summary: 'Older proof',
+            recorded_at: '2026-10-16T12:00:00Z',
+            next_update_at: null
+          }
+        ]
+      },
+      {
+        ...workItem,
+        expectation_id: 'new',
+        state: 'completed',
+        updates: [
+          {
+            ...workItem.updates[0],
+            summary: 'New private release delivered',
+            recorded_at: '2026-10-22T21:00:00Z',
+            next_update_at: null
+          }
+        ]
+      }
+    ]
+  });
+  h.run('last=inboxInput;actualOverview()');
+  assert.match(textOf(h.nodes.get('work-summary')), /New private release delivered/);
+  assert.doesNotMatch(textOf(h.nodes.get('work-summary')), /Older proof/);
+});
 test('completed and withdrawn details keep the request date without claiming an ongoing wait', () => {
   for (const state of ['completed', 'withdrawn']) {
     const h = harness();

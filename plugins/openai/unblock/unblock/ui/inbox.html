@@ -767,11 +767,26 @@
               : "Agent work unavailable · last-known updates retained.";
           return;
         }
-        const activeWork = workRows.find(
-          (i) =>
-            !["completed", "cancelled"].includes(i.state) &&
-            (!$("agents").value || i.agent_id === $("agents").value),
+        const recentWork = [...workRows].sort(
+          (a, b) =>
+            Math.max(
+              0,
+              ...b.updates.map((u) => Date.parse(u.recorded_at || "") || 0),
+            ) -
+            Math.max(
+              0,
+              ...a.updates.map((u) => Date.parse(u.recorded_at || "") || 0),
+            ),
         );
+        const activeWork =
+          recentWork.find(
+            (i) =>
+              !["completed", "cancelled"].includes(i.state) &&
+              (!$("agents").value || i.agent_id === $("agents").value),
+          ) ||
+          recentWork.find(
+            (i) => !$("agents").value || i.agent_id === $("agents").value,
+          );
         if (activeWork) {
           $("work-summary").append(
             el(
@@ -1353,7 +1368,7 @@
         if (interactive && !busy) refresh();
       }, 15000);
       rpc("ui/initialize", {
-        appInfo: { name: "unblock-inbox", version: "0.7.0" },
+        appInfo: { name: "unblock-inbox", version: "0.7.1" },
         appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
         protocolVersion: "2026-01-26",
       })
