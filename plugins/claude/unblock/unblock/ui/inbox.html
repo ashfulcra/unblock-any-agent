@@ -175,6 +175,26 @@
         padding-top: 11px;
         margin-top: 14px;
       }
+      .next-action {
+        display: block;
+        font-size: 12px;
+        line-height: 1.6;
+        margin-top: 12px;
+        color: var(--ink);
+      }
+      .work-notice {
+        grid-column: 1/-1;
+        margin: 0;
+      }
+      #work-summary:empty {
+        display: none;
+      }
+      #work-summary {
+        margin-bottom: 18px;
+      }
+      #work-summary .card {
+        border-left: 3px solid var(--accent);
+      }
       .message {
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -332,6 +352,7 @@
       <div id="message" class="message" role="status"></div>
       <div id="overview">
         <nav id="status" class="status" aria-label="Work status"></nav>
+        <section id="work-summary" aria-label="Latest agent work"></section>
         <div class="filters">
           <input
             id="search"
@@ -566,6 +587,7 @@
           message(
             `${pending.size} saved decision intent(s) need verification. Open Verify answers to reconcile the original submission.`,
           );
+        else message("");
         renderOverview();
         if (detail) renderDetail();
       }
@@ -577,21 +599,79 @@
         ready = data.source === "checked";
         renderDetail();
       }
+      function applyWorkDetail(data) {
+        if (!data?.expectation) return;
+        bindWorkspace(data.workspace_id);
+        detail = data;
+        selected = "work:" + data.expectation.id;
+        renderDetail();
+      }
+      const workLabels = {
+        working: "Agent reports working",
+        due: "Update overdue",
+        investigate: "Missed update recorded",
+        conflict: "Concurrent updates — review needed",
+        completed: "Work completed",
+        cancelled: "Work cancelled",
+      };
+      const workTime = (value) =>
+        Number.isFinite(Date.parse(value || ""))
+          ? new Date(value).toLocaleString()
+          : "time unknown";
+      function workCard(item) {
+        const b = el("button", undefined, "card");
+        b.dataset.request = "work:" + item.expectation_id;
+        b.append(
+          el("span", item.agent_name, "agent"),
+          el("span", workLabels[item.state] || "Work status unknown", "age"),
+        );
+        for (const update of item.updates) {
+          b.append(
+            el("strong", update.summary, "question"),
+            el("span", update.evidence, "context"),
+            el("span", "Next: " + update.next_action, "next-action"),
+          );
+          b.append(
+            el(
+              "span",
+              "Last update: " + workTime(update.recorded_at),
+              "context",
+            ),
+          );
+          if (update.next_update_at !== null)
+            b.append(
+              el(
+                "span",
+                "Update expected by " +
+                  new Date(update.next_update_at * 1000).toLocaleString(),
+                "context",
+              ),
+            );
+        }
+        b.append(el("span", "Open work details  ↗", "state"));
+        b.onclick = () => openWork(item.expectation_id);
+        return b;
+      }
       function renderOverview() {
         if (!last) return;
         $("overview").hidden = !!selected;
         $("detail").hidden = !selected;
         const counts = last.counts;
+        const workCounts = last.work_counts;
+        const workRows = last.work_items || [];
+        const workTab = tab === "work" || tab === "investigate";
         $("status").replaceChildren();
         for (const [id, title] of [
           ["needs_you", "Needs you"],
           ["with_agents", "With agents"],
+          ["work", "Agent work"],
+          ["investigate", "Investigate"],
           ["done", "Done"],
           ...(pending.size ? [["pending", "Verify answers"]] : []),
         ]) {
           const b = el(
             "button",
-            `${id === "pending" ? pending.size : (counts?.[id] ?? "—")}  ${title}`,
+            `${id === "pending" ? pending.size : id === "work" ? (workCounts ? workCounts.working + workCounts.investigate + workCounts.done : "—") : id === "investigate" ? (workCounts?.investigate ?? "—") : (counts?.[id] ?? "—")}  ${title}`,
             id === tab ? "active" : "",
           );
           b.onclick = () => {
@@ -602,7 +682,7 @@
         }
         const choice = $("agents").value;
         const names = new Map(
-          last.items.map((i) => [i.agent_id, i.agent_name]),
+          [...last.items, ...workRows].map((i) => [i.agent_id, i.agent_name]),
         );
         $("agents").replaceChildren(
           new Option("All agents", ""),
@@ -628,6 +708,82 @@
             ),
         );
         $("cards").replaceChildren();
+        $("work-summary").replaceChildren();
+        if (workTab) {
+          if (last.work_source !== "checked")
+            $("cards").append(
+              el(
+                "p",
+                "Agent work source unavailable. Showing last-known updates; current work and deadlines are unknown.",
+                "message work-notice",
+              ),
+            );
+          else
+            $("cards").append(
+              el(
+                "p",
+                tab === "investigate"
+                  ? "Missed or conflicting updates need investigation. Their cause is unknown; they are separate from decisions that need you."
+                  : "Concrete agent updates, next actions and declared deadlines. A source check or saved answer is not a work update.",
+                "message work-notice",
+              ),
+            );
+          const shown = workRows.filter(
+            (i) =>
+              (tab !== "investigate" ||
+                ["due", "investigate", "conflict"].includes(i.state)) &&
+              (!$("agents").value || i.agent_id === $("agents").value) &&
+              terms.every((t) =>
+                [
+                  i.agent_name,
+                  i.agent_id,
+                  ...i.updates.flatMap((u) => [
+                    u.summary,
+                    u.evidence,
+                    u.next_action,
+                  ]),
+                ]
+                  .join(" ")
+                  .toLocaleLowerCase()
+                  .includes(t),
+              ),
+          );
+          for (const item of shown) $("cards").append(workCard(item));
+          if (!shown.length)
+            $("cards").append(
+              el(
+                "p",
+                last.work_source !== "checked"
+                  ? "Agent work coverage is unknown."
+                  : workRows.length
+                    ? "No work updates match this view."
+                    : "No agent work updates have been declared in the checked workspace.",
+                "empty",
+              ),
+            );
+          $("source").textContent =
+            last.work_source === "checked"
+              ? `Agent work checked ${workTime(last.work_checked_at)}. A deadline is a commitment, not proof of an active monitor.`
+              : "Agent work unavailable · last-known updates retained.";
+          return;
+        }
+        const activeWork = workRows.find(
+          (i) =>
+            !["completed", "cancelled"].includes(i.state) &&
+            (!$("agents").value || i.agent_id === $("agents").value),
+        );
+        if (activeWork) {
+          $("work-summary").append(
+            el(
+              "p",
+              last.work_source === "checked"
+                ? "Latest agent work"
+                : "Last-known agent work · current status unknown",
+              "context",
+            ),
+            workCard(activeWork),
+          );
+        }
         for (const item of rows) {
           const b = el("button", undefined, "card");
           b.dataset.request = item.request_id;
@@ -636,6 +792,15 @@
             el("span", timing(item), "age"),
             el("strong", item.decision, "question"),
             el("span", item.context, "context"),
+            ...(item.next_action
+              ? [
+                  el(
+                    "span",
+                    "After your answer: " + item.next_action,
+                    "next-action",
+                  ),
+                ]
+              : []),
             el("span", `${labels[item.state] || "Needs review"}  ↗`, "state"),
           );
           b.onclick = () => openDecision(item.request_id);
@@ -676,6 +841,10 @@
       }
       function renderDetail() {
         if (!detail || !selected) return;
+        if (detail.expectation) {
+          renderWorkDetail();
+          return;
+        }
         const row = detail.request,
           hadFocus = document.activeElement?.id === "answer",
           cursor = hadFocus ? document.activeElement.selectionStart : null;
@@ -890,27 +1059,133 @@
           height: Math.min(document.documentElement.scrollHeight, 760),
         });
       }
+      function renderWorkDetail() {
+        const row = detail.expectation,
+          panel = $("detail");
+        panel.replaceChildren();
+        $("overview").hidden = true;
+        panel.hidden = false;
+        const head = el("header"),
+          identity = el("div"),
+          close = el("button", "Back to work and decisions", "quiet");
+        identity.append(
+          el("strong", detail.agent_name || row.agent_id, "agent"),
+          el("span", workLabels[row.state] || "Unknown work state", "age"),
+        );
+        close.onclick = closeDetail;
+        head.append(identity, close);
+        panel.append(head);
+        if (last && last.work_source !== "checked")
+          panel.append(
+            el(
+              "p",
+              "Work source unavailable. These are retained details; current status is unknown.",
+              "message",
+            ),
+          );
+        if (row.state === "conflict")
+          panel.append(
+            el(
+              "p",
+              "Concurrent updates need agent reconciliation. All current versions remain visible; no deadline was silently chosen.",
+              "message",
+            ),
+          );
+        if (["due", "investigate"].includes(row.state))
+          panel.append(
+            el(
+              "p",
+              row.state === "due"
+                ? "The declared update is overdue. No persisted missed-update check is visible yet."
+                : "A missed update was recorded. Its cause is unknown. This is not automatically a question for you.",
+              "message",
+            ),
+          );
+        for (const revision of row.revisions) {
+          const p = revision.payload;
+          panel.append(el("h2", p.summary));
+          section("Latest evidence", p.evidence, panel);
+          section("Next action", p.next_action, panel);
+          section("Last update", workTime(revision.recorded_at), panel);
+          if (p.next_update_at !== null)
+            section(
+              "Update expected by",
+              new Date(p.next_update_at * 1000).toLocaleString(),
+              panel,
+            );
+          compactSection("Context", p.context, 400, panel);
+        }
+        if (row.link_conflict)
+          panel.append(
+            el(
+              "p",
+              "Linked questions conflict and need agent reconciliation. No human question was closed.",
+              "message",
+            ),
+          );
+        for (const id of row.request_ids || []) {
+          const button = el("button", "Open linked decision", "quiet");
+          button.onclick = () => openDecision(id);
+          panel.append(button);
+        }
+        const history = el("details");
+        history.append(
+          el("summary", `Work update history (${row.history.length})`),
+        );
+        for (const r of row.history)
+          section(r.payload.summary, r.payload.evidence, history);
+        for (const o of row.observations)
+          section(
+            "Missed-update check",
+            `Recorded for revision ${o.payload.revision}. ${row.current_observations.some((current) => current.id === o.id) ? "Current concern." : "Historical concern retained."}`,
+            history,
+          );
+        panel.append(
+          history,
+          el(
+            "p",
+            "This view reports declared work. It does not execute the agent or start a background monitor.",
+            "context",
+          ),
+        );
+      }
       async function refresh() {
         const requestId = selected,
           version = selectionVersion;
+        let inboxChecked = false;
         try {
           const data = await tool("show_inbox", { include_completed: true });
           applyInbox(data);
+          inboxChecked = ready;
           if (
             requestId &&
             selected === requestId &&
             version === selectionVersion &&
             ready
           ) {
-            const result = await tool("get_decision", {
-              request_id: requestId,
-            });
+            const isWork = requestId.startsWith("work:");
+            const result = await tool(
+              isWork ? "get_work_update" : "get_decision",
+              isWork
+                ? { expectation_id: requestId.slice(5) }
+                : { request_id: requestId },
+            );
             if (selected === requestId && version === selectionVersion)
-              applyDetail(result);
+              (isWork ? applyWorkDetail : applyDetail)(result);
           }
         } catch (error) {
-          ready = false;
+          if (!inboxChecked || !requestId.startsWith("work:")) ready = false;
+          if (last)
+            last = {
+              ...last,
+              source: inboxChecked ? last.source : "unavailable",
+              counts: inboxChecked ? last.counts : null,
+              work_source: "unavailable",
+              work_counts: null,
+              work_last_known: true,
+            };
           message(error.message);
+          renderOverview();
           if (detail) renderDetail();
         }
       }
@@ -924,6 +1199,18 @@
           message("");
         } catch (error) {
           ready = false;
+          message(error.message);
+        }
+      }
+      async function openWork(id) {
+        const version = ++selectionVersion;
+        try {
+          const data = await tool("get_work_update", { expectation_id: id });
+          if (version !== selectionVersion) return;
+          applyWorkDetail(data);
+          $("detail").querySelector("button")?.focus();
+          message("");
+        } catch (error) {
           message(error.message);
         }
       }
@@ -1023,6 +1310,12 @@
           const data = m.params?.structuredContent;
           if (data?.items) applyInbox(data);
           else if (
+            data?.expectation &&
+            (selectionVersion === 0 ||
+              selected === "work:" + data.expectation.id)
+          )
+            applyWorkDetail(data);
+          else if (
             data?.request &&
             (selectionVersion === 0 || selected === data.request.id)
           )
@@ -1060,7 +1353,7 @@
         if (interactive && !busy) refresh();
       }, 15000);
       rpc("ui/initialize", {
-        appInfo: { name: "unblock-inbox", version: "0.6.2" },
+        appInfo: { name: "unblock-inbox", version: "0.7.0" },
         appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
         protocolVersion: "2026-01-26",
       })

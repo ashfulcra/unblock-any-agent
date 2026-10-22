@@ -1,6 +1,6 @@
 # Human decisions inside chat
 
-The optional human inbox has three tools: `show_inbox`, `get_decision`, and `answer_decision`, plus a standard MCP Apps view in compatible hosts. It is a separate explicit owner connection. The normal worker server keeps its existing profile, identity, scope and tools; it never selects this human connection automatically. No new account, OAuth client, listener, agent session or background worker is created.
+The optional human inbox has four tools: `show_inbox`, `get_decision`, `get_work_update`, and `answer_decision`, plus a standard MCP Apps view in compatible hosts. It is a separate explicit owner connection. The normal worker server keeps its existing profile, identity, scope and tools; it never selects this human connection automatically. No new account, OAuth client, listener, agent session or background worker is created.
 
 ## One-time local connection
 
@@ -24,7 +24,9 @@ Keep the existing worker connection unchanged. GUI hosts may not inherit shell v
 
 ## Review and answer
 
-`show_inbox {}` starts with active work, oldest first. It returns actual agent names, original dates, concise questions and context. The view offers Needs you / With agents / Done, search and agent filtering, with one full decision form. Text-only hosts receive useful summaries through the same tools. No instructions inside an agent's context may choose an identity, route, tool or authorization.
+`show_inbox {}` starts with active work, oldest first. It returns actual agent names, original dates, concise questions and context. The view offers Needs you / With agents / Agent work / Investigate / Done, search and agent filtering, with one full decision form. The first view includes the latest declared agent work, concrete evidence, next action and expected deadline. Agent work and missed updates remain separate from human questions. Text-only hosts receive useful summaries through the same tools. No instructions inside an agent's context may choose an identity, route, tool or authorization.
+
+`get_work_update` reads the full current work update, all concurrent heads, retained history and missed-update observations. It is read-only: it never executes the agent, starts a monitor or answers a linked question. Missing work coverage remains unknown, retaining last-known updates independently of decision coverage.
 
 `get_decision` returns the complete current question, recommendation, context, answer set, action uncertainty and retained history. Its `reviewed_snapshot` binds the question, all current answers and unresolved effects. To save the human's actual answer, pass its `request_id`, sole current `revision`, exact `reviewed_snapshot`, `answer`, and one stable `intent_id` to `answer_decision`. The model handles these references; do not require the human to transcribe them.
 

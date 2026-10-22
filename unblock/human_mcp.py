@@ -13,7 +13,7 @@ from mcp.types import CallToolResult,TextContent,ToolAnnotations
 from .human_inbox import HumanInbox
 from .store import DomainError
 
-UI_URI='ui://unblock/human-inbox'
+UI_URI='ui://unblock/human-inbox/v0.7.0'
 
 
 def age(value):
@@ -28,7 +28,7 @@ def age(value):
 
 def build_server(config,*,client=None):
     inbox=client or HumanInbox.from_file(config)
-    server=MCPServer('unblock-inbox',version='0.6.2',instructions='Human decision inbox. Show actual agent identity, original waiting time, concise decision and relevant context. Read the full decision before saving only the human’s actual answer. Exact reviewed snapshots prevent silently applying a decision to changed questions. Preserve pending answer intents and retry them unchanged. A saved answer never proves worker pickup. This explicit owner connection is separate from worker grants; it cannot enroll, renew or execute agent work.',log_level='ERROR')
+    server=MCPServer('unblock-inbox',version='0.7.0',instructions='Human decision inbox and declared agent work. Show actual agent identity, original waiting time, concise decision, concrete work evidence, next action and expected update. Missed work updates need investigation; they do not imply a human decision. Read the full decision before saving only the human’s actual answer. Exact reviewed snapshots prevent silently applying a decision to changed questions. Preserve pending answer intents and retry them unchanged. A saved answer never proves worker pickup. This explicit owner connection is separate from worker grants; it cannot enroll, renew or execute agent work.',log_level='ERROR')
     read=ToolAnnotations(read_only_hint=True,destructive_hint=False,open_world_hint=False)
     write=ToolAnnotations(read_only_hint=False,destructive_hint=False,open_world_hint=False)
 
@@ -52,7 +52,23 @@ def build_server(config,*,client=None):
         lines=[status]
         for item in data['items']:
             lines.append(f"{item['agent_name']} · {age(item['created_at'])} · {item['state']}\n{item['decision']}\n{item['context']}\nRequest: {item['request_id']}")
+        if data.get('work_source')=='checked':
+            counts=data['work_counts'];lines.append(f"Declared agent work: {counts['working']} working; {counts['investigate']} need investigation; {counts['done']} finished.")
+        else:lines.append('Agent work coverage unavailable. Retained updates are last known; no empty or fresh work status is implied.')
+        for item in data.get('work_items',[]):
+            lines.append(f"{item['agent_name']} · {item['state']}\nWork: {item['expectation_id']}")
+            for update in item['updates']:
+                lines.append(f"{update['summary']}\nEvidence: {update['evidence']}\nNext: {update['next_action']}\nUpdate expected: {update['next_update_at'] if update['next_update_at'] is not None else 'closed'}")
         if data['pending_answers']:lines.append(f"{len(data['pending_answers'])} uncertain saved answer intents remain to reconcile. Retry each original intent unchanged.")
+        return result(data,'\n\n'.join(lines))
+
+    @server.tool(title='Review agent work update',annotations=read,meta={'ui':{'resourceUri':UI_URI}})
+    def get_work_update(expectation_id:str)->CallToolResult:
+        """Read declared work, all current update heads, actual evidence, next actions, deadlines and retained concern history. Read-only; it never answers a human question, executes work or starts a monitor."""
+        data=call(inbox.get_work_update,expectation_id);row=data['expectation']
+        lines=[f"{data['agent_name']} · {row['state']}"]
+        for revision in row['revisions']:
+            p=revision['payload'];lines.append(f"Work: {p['summary']}\nEvidence: {p['evidence']}\nNext: {p['next_action']}\nExpected update: {p['next_update_at'] if p['next_update_at'] is not None else 'closed'}")
         return result(data,'\n\n'.join(lines))
 
     @server.tool(title='Review agent decision',annotations=read,meta={'ui':{'resourceUri':UI_URI}})

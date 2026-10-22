@@ -40,6 +40,27 @@ def snapshot(row):
     return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 
+def valid_work(rows):
+    """Missing or malformed work coverage is unknown, never a checked empty list."""
+    if not isinstance(rows,list):return False
+    try:
+        for row in rows:
+            reference(row['id'])
+            if not isinstance(row['agent_id'],str) or row['state'] not in ('working','due','investigate','conflict','completed','cancelled'):return False
+            if not isinstance(row['revisions'],list) or not row['revisions']:return False
+            for field in ('history','observations','current_observations'):
+                if not isinstance(row[field],list):return False
+            for revision in row['revisions']:
+                reference(revision['id']);payload=revision['payload']
+                if any(not isinstance(payload[key],str) for key in ('summary','context','evidence','next_action')):return False
+                if payload['status'] not in ('working','completed','cancelled'):return False
+                if payload['status']=='working':
+                    if type(payload['next_update_at']) is not int:return False
+                elif payload['next_update_at'] is not None:return False
+        return True
+    except (KeyError,TypeError,DomainError):return False
+
+
 def cli_token():
     executable=shutil.which('fulcra-api')
     if not executable:raise DomainError('human_cli_sign_in_required',401)
@@ -178,10 +199,36 @@ class HumanInbox:
             if agent_id and row['agent_id']!=agent_id:continue
             q=row['revisions'][0]['payload'];name=names.get(row['agent_id'],row['agent_id'])
             if not all(t in (name+' '+row['agent_id']+' '+canonical(q)).casefold() for t in query.casefold().split()):continue
-            items.append({'request_id':row['id'],'agent_id':row['agent_id'],'agent_name':name,'created_at':row.get('created_at'),'state':row['state'],'decision':excerpt(q['need'],160),'context':excerpt(q.get('context',''),280),'recommendation':excerpt(q.get('recommendation',''),200),'question_versions':len(row['revisions'])})
+            items.append({'request_id':row['id'],'agent_id':row['agent_id'],'agent_name':name,'created_at':row.get('created_at'),'state':row['state'],'decision':excerpt(q['need'],160),'context':excerpt(q.get('context',''),280),'recommendation':excerpt(q.get('recommendation',''),200),'next_action':excerpt(q.get('next_action',''),220),'question_versions':len(row['revisions'])})
         items.sort(key=lambda r:(r['created_at'] is None,r['created_at'] or '',r['agent_name']))
         counts={'needs_you':sum(r['state'] in ('needs_you','conflict','answer_conflict','uncertain_action') for r in rows),'with_agents':sum(r['state'] in ('awaiting_pickup','acknowledged','resumed') for r in rows),'done':sum(r['state'] in ('completed','withdrawn') for r in rows)} if source=='checked' else None
-        return {'workspace_id':self.workspace_id,'source':source,'last_known':source!='checked' and bool(data['checked_at']),'checked_at':data['checked_at'],'counts':counts,'items':items,'pending_answers':self.pending_answers(),'error':error}
+        work_source='checked' if source=='checked' and valid_work(data.get('expectations')) else 'unavailable'
+        with self.db() as db:
+            if work_source=='checked':
+                work={'expectations':data['expectations'],'checked_at':data['checked_at'],'names':names}
+                db.execute("INSERT OR REPLACE INTO meta VALUES ('last_known_work',?)",(canonical(work),))
+            else:
+                prior=db.execute("SELECT value FROM meta WHERE key='last_known_work'").fetchone()
+                work=json.loads(prior[0]) if prior else {'expectations':[],'checked_at':None,'names':{}}
+        work_items=[]
+        for row in work['expectations']:
+            if not include_completed and row['state'] in ('completed','cancelled'):continue
+            if agent_id and row['agent_id']!=agent_id:continue
+            name=work['names'].get(row['agent_id'],row['agent_id'])
+            if not all(t in (name+' '+row['agent_id']+' '+canonical(row['revisions'])).casefold() for t in query.casefold().split()):continue
+            updates=[{'revision':r['id'],'recorded_at':r.get('recorded_at'),'summary':excerpt(r['payload']['summary'],200),'evidence':excerpt(r['payload']['evidence'],280),'next_action':excerpt(r['payload']['next_action'],240),'status':r['payload']['status'],'next_update_at':r['payload']['next_update_at']} for r in row['revisions']]
+            work_items.append({'expectation_id':row['id'],'agent_id':row['agent_id'],'agent_name':name,'environment':row.get('environment',''),'state':row['state'],'updates':updates,'request_ids':row.get('request_ids',[]),'link_conflict':row.get('link_conflict',False)})
+        work_items.sort(key=lambda r:(r['state'] not in ('due','investigate','conflict'),r['agent_name'],r['expectation_id']))
+        work_counts={'working':sum(r['state']=='working' for r in work['expectations']),'investigate':sum(r['state'] in ('due','investigate','conflict') for r in work['expectations']),'done':sum(r['state'] in ('completed','cancelled') for r in work['expectations'])} if work_source=='checked' else None
+        return {'workspace_id':self.workspace_id,'source':source,'last_known':source!='checked' and bool(data['checked_at']),'checked_at':data['checked_at'],'counts':counts,'items':items,'work_source':work_source,'work_checked_at':work['checked_at'],'work_last_known':work_source!='checked' and bool(work['checked_at']),'work_counts':work_counts,'work_items':work_items,'pending_answers':self.pending_answers(),'error':error}
+
+    def get_work_update(self,expectation_id):
+        eid=reference(expectation_id);data=self.checked(self.connect())
+        if not valid_work(data.get('expectations')):raise DomainError('work_source_unavailable',503)
+        row=next((r for r in data['expectations'] if r['id']==eid),None)
+        if row is None:raise DomainError('work_update_not_found',404)
+        name=next((g.get('name') or g['agent_id'] for g in data.get('grants',[]) if g['agent_id']==row['agent_id'] and g.get('kind','agent')=='agent'),row['agent_id'])
+        return {'workspace_id':self.workspace_id,'source':'checked','checked_at':data['checked_at'],'agent_name':name,'expectation':row}
 
     def get_decision(self,request_id):
         rid=reference(request_id);data=self.checked(self.connect())

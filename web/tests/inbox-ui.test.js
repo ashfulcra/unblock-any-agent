@@ -73,7 +73,12 @@ function harness(stored = new Map()) {
       parent: { postMessage() {} },
       addEventListener: (name, fn) => listeners.set(name, fn)
     },
-    Option: class extends Node {},
+    Option: class extends Node {
+      constructor(text, value) {
+        super('option', text);
+        this.value = value;
+      }
+    },
     crypto: { randomUUID: () => 'fresh-intent' },
     setTimeout() {},
     clearTimeout() {},
@@ -81,7 +86,10 @@ function harness(stored = new Map()) {
     clearInterval() {}
   });
   vm.runInContext(script, context);
-  vm.runInContext('renderOverview=()=>{}; refresh=async()=>{};', context);
+  vm.runInContext(
+    'const actualOverview=renderOverview,actualRefresh=refresh;renderOverview=()=>{}; refresh=async()=>{};',
+    context
+  );
   return {
     context,
     nodes,
@@ -93,6 +101,198 @@ function harness(stored = new Map()) {
     }
   };
 }
+
+const workItem = {
+  expectation_id: 'work-A',
+  agent_id: 'builder',
+  agent_name: 'Builder',
+  environment: 'desktop',
+  state: 'investigate',
+  updates: [
+    {
+      revision: 'update-A',
+      recorded_at: '2026-10-22T12:00:00Z',
+      summary: 'Deliver the installed inbox',
+      evidence: 'Missing work status reproduced',
+      next_action: 'Publish and inspect the installed work view',
+      status: 'working',
+      next_update_at: 1792669200
+    }
+  ],
+  request_ids: []
+};
+const workInbox = {
+  workspace_id: 'w',
+  source: 'checked',
+  checked_at: '2026-10-22T12:01:00Z',
+  counts: { needs_you: 0, with_agents: 0, done: 0 },
+  items: [],
+  pending_answers: [],
+  work_source: 'checked',
+  work_checked_at: '2026-10-22T12:01:00Z',
+  work_counts: { working: 0, investigate: 1, done: 0 },
+  work_items: [workItem]
+};
+const nodeText = (n) => [n.textContent, ...n.children.map(nodeText)].join(' ');
+
+test('plugin overview exposes declared work and investigations without inventing human questions', () => {
+  const h = harness();
+  h.set('input', workInbox);
+  h.run('renderOverview=actualOverview;applyInbox(input)');
+  const tabs = h.nodes.get('status').children;
+  assert.ok(tabs.some((n) => n.textContent.includes('Agent work')));
+  assert.ok(tabs.some((n) => n.textContent.includes('Investigate') && n.textContent.includes('1')));
+  tabs.find((n) => n.textContent.includes('Investigate')).onclick();
+  const text = nodeText(h.nodes.get('cards'));
+  assert.match(text, /Builder/);
+  assert.match(text, /Missing work status reproduced/);
+  assert.match(text, /Publish and inspect the installed work view/);
+  assert.match(text, /overdue|missed update/i);
+  assert.equal(h.run('last.counts.needs_you'), 0);
+});
+
+test('work-only agents remain searchable and filterable in the plugin', () => {
+  const h = harness();
+  h.set('input', workInbox);
+  h.run('renderOverview=actualOverview;applyInbox(input);tab="work";renderOverview()');
+  assert.ok(h.nodes.get('agents').children.some((n) => n.textContent === 'Builder'));
+  h.nodes.get('search').value = 'installed';
+  h.run('renderOverview()');
+  assert.match(nodeText(h.nodes.get('cards')), /Deliver the installed inbox/);
+  h.nodes.get('search').value = 'unrelated';
+  h.run('renderOverview()');
+  assert.doesNotMatch(nodeText(h.nodes.get('cards')), /Deliver the installed inbox/);
+});
+
+test('unknown work coverage labels retained updates without checked empty or fresh counts', () => {
+  const h = harness();
+  h.set('input', {
+    ...workInbox,
+    work_source: 'unavailable',
+    work_counts: null,
+    work_last_known: true
+  });
+  h.run('renderOverview=actualOverview;applyInbox(input);tab="work";renderOverview()');
+  assert.match(nodeText(h.nodes.get('cards')), /last.known|unavailable/i);
+  assert.match(nodeText(h.nodes.get('cards')), /Missing work status reproduced/);
+  assert.ok(
+    h.nodes
+      .get('status')
+      .children.some((n) => n.textContent.includes('Agent work') && n.textContent.includes('—'))
+  );
+});
+
+test('work detail retains concurrent heads and has no human answer form', () => {
+  const h = harness();
+  const revision = {
+    id: 'update-A',
+    recorded_at: '2026-10-22T12:00:00Z',
+    payload: {
+      summary: 'Deliver inbox',
+      context: 'Current implementation',
+      evidence: 'First result',
+      next_action: 'Inspect host',
+      status: 'working',
+      next_update_at: 1792669200
+    }
+  };
+  h.set('input', {
+    workspace_id: 'w',
+    source: 'checked',
+    checked_at: '2026-10-22T12:01:00Z',
+    agent_name: 'Builder',
+    expectation: {
+      id: 'work-A',
+      agent_id: 'builder',
+      environment: 'desktop',
+      state: 'conflict',
+      revisions: [
+        revision,
+        {
+          ...revision,
+          id: 'update-B',
+          payload: { ...revision.payload, evidence: 'Second concurrent result' }
+        }
+      ],
+      history: [revision],
+      observations: [],
+      current_observations: [],
+      request_ids: [],
+      link_conflict: false
+    }
+  });
+  h.run('applyWorkDetail(input)');
+  const panel = h.nodes.get('detail');
+  const text = nodeText(panel);
+  assert.match(text, /First result/);
+  assert.match(text, /Second concurrent result/);
+  assert.match(text, /concurrent|reconcil/i);
+  assert.equal(panel.querySelectorAll('textarea').length, 0);
+});
+
+test('refreshing selected work uses the read-only work tool and marks retained details unknown on failure', async () => {
+  const h = harness();
+  const revision = {
+    id: 'update-A',
+    recorded_at: '2026-10-22T12:00:00Z',
+    payload: {
+      summary: 'Deliver inbox',
+      context: 'Current implementation',
+      evidence: 'First result',
+      next_action: 'Inspect host',
+      status: 'working',
+      next_update_at: 1792669200
+    }
+  };
+  const data = {
+    workspace_id: 'w',
+    source: 'checked',
+    checked_at: '2026-10-22T12:01:00Z',
+    agent_name: 'Builder',
+    expectation: {
+      id: 'work-A',
+      agent_id: 'builder',
+      state: 'working',
+      revisions: [revision],
+      history: [revision],
+      observations: [],
+      current_observations: [],
+      request_ids: []
+    }
+  };
+  h.set('input', workInbox);
+  h.set('workData', data);
+  h.run('applyInbox(input);applyWorkDetail(workData);refresh=actualRefresh');
+  const calls = [];
+  h.set('hostTool', async (name, args) => {
+    calls.push([name, args]);
+    if (name === 'show_inbox') return workInbox;
+    if (name === 'get_work_update')
+      return {
+        ...data,
+        expectation: {
+          ...data.expectation,
+          revisions: [
+            { ...revision, payload: { ...revision.payload, evidence: 'New verified result' } }
+          ]
+        }
+      };
+    throw new Error('Unexpected tool');
+  });
+  h.run('tool=hostTool');
+  await h.run('refresh()');
+  assert.equal(calls[1][0], 'get_work_update');
+  assert.equal(calls[1][1].expectation_id, 'work-A');
+  assert.match(nodeText(h.nodes.get('detail')), /New verified result/);
+  h.set('hostTool', async (name) => {
+    if (name === 'show_inbox') return workInbox;
+    throw new Error('Work source read failed');
+  });
+  h.run('tool=hostTool');
+  await h.run('refresh()');
+  assert.match(nodeText(h.nodes.get('detail')), /retained|unknown/i);
+  assert.match(nodeText(h.nodes.get('detail')), /New verified result/);
+});
 const old = {
   request_id: 'request-A',
   revision: 'old-revision',

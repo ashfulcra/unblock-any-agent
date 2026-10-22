@@ -193,5 +193,70 @@ class HumanInboxTests(unittest.TestCase):
         target=Path(self.temp.name)/'symlink.db';target.symlink_to(self.state)
         with self.assertRaises((DomainError,ValueError)):HumanInbox(PROJECT,OWNER,target)
 
+    def work_client(self, rows):
+        def dashboard(origin, token, operation, data=None):
+            result=self.dashboard(origin,token,operation,data)
+            if operation=='attention' and rows is not None:result['expectations']=copy.deepcopy(rows)
+            return result
+        return HumanInbox(PROJECT,OWNER,self.state,token_provider=lambda:'private-test-token',platform=self.platform,dashboard=dashboard)
+
+    def work_row(self):
+        update={'id':REV,'recorded_at':'2026-10-19T11:55:00Z','payload':{'summary':'Finish the installed inbox','context':'Actual work, separate from a human question','evidence':'Reproduced missing work status','next_action':'Publish and verify the work view','status':'working','next_update_at':1792411200}}
+        return {'id':PROJECT,'agent_id':'alpha','environment':'desktop','state':'investigate','revisions':[update],'history':[update],'observations':[],'current_observations':[],'request_ids':[RID],'link_conflict':False}
+
+    def test_missed_work_update_is_visible_without_inventing_another_human_question(self):
+        result=self.work_client([self.work_row()]).inbox()
+        self.assertEqual(result['work_source'],'checked')
+        self.assertEqual(result['work_counts'],{'working':0,'investigate':1,'done':0})
+        item=result['work_items'][0]
+        self.assertEqual(item['agent_name'],'Alpha designer')
+        self.assertEqual(item['updates'][0]['evidence'],'Reproduced missing work status')
+        self.assertEqual(item['updates'][0]['next_action'],'Publish and verify the work view')
+        self.assertEqual(result['counts']['needs_you'],1)
+        self.assertEqual(len(result['items']),1)
+        self.assertEqual(result['items'][0]['next_action'],'Apply only the private test marker')
+
+    def test_work_detail_retains_all_conflicting_heads_and_history(self):
+        row=self.work_row();second=copy.deepcopy(row['revisions'][0]);second['id']=RID;second['payload']['evidence']='Concurrent second result'
+        row['revisions'].append(second);row['history'].append(second);row['state']='conflict'
+        c=self.work_client([row]);result=c.inbox()
+        self.assertEqual(len(result['work_items'][0]['updates']),2)
+        self.assertEqual(c.get_work_update(PROJECT)['expectation'],row)
+        with self.assertRaises(DomainError):c.get_work_update(OWNER)
+
+    def test_missing_work_coverage_keeps_last_known_work_without_claiming_empty_or_fresh(self):
+        self.work_client([self.work_row()]).inbox()
+        result=self.work_client(None).inbox()
+        self.assertEqual(result['source'],'checked')
+        self.assertEqual(result['work_source'],'unavailable')
+        self.assertTrue(result['work_last_known'])
+        self.assertIsNone(result['work_counts'])
+        self.assertEqual(len(result['work_items']),1)
+
+    def test_malformed_work_coverage_does_not_erase_retained_work_or_block_decisions(self):
+        self.work_client([self.work_row()]).inbox()
+        bad=self.work_row();bad['revisions']=[]
+        result=self.work_client([bad]).inbox()
+        self.assertEqual(result['work_source'],'unavailable')
+        self.assertEqual(len(result['work_items']),1)
+        self.assertEqual(result['counts']['needs_you'],1)
+
+    def test_source_failure_retains_work_and_decision_with_unknown_counts(self):
+        c=self.work_client([self.work_row()]);c.inbox();self.fail_read=True
+        result=c.inbox()
+        self.assertEqual(result['work_source'],'unavailable')
+        self.assertIsNone(result['work_counts'])
+        self.assertEqual(len(result['work_items']),1)
+        self.assertEqual(len(result['items']),1)
+
+    def test_work_filters_and_terminal_history_preserve_decision_counts(self):
+        row=self.work_row();row['state']='completed';row['revisions'][0]['payload'].update(status='completed',next_update_at=None)
+        c=self.work_client([row])
+        self.assertEqual(c.inbox()['work_items'],[])
+        self.assertEqual(c.inbox()['work_counts']['done'],1)
+        self.assertEqual(len(c.inbox(include_completed=True,query='publish')['work_items']),1)
+        self.assertEqual(c.inbox(include_completed=True,agent_id='someone-else')['work_items'],[])
+        self.assertEqual(c.inbox()['counts']['needs_you'],1)
+
 
 if __name__=='__main__':unittest.main()

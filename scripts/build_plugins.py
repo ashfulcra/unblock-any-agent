@@ -5,7 +5,7 @@ from pathlib import Path
 import shutil
 
 SOURCE=Path(__file__).resolve().parents[1]
-VERSION='0.6.2'
+VERSION='0.7.0'
 REPOSITORY='https://github.com/ashfulcra/unblock-any-agent'
 RUNTIME=('__init__.py','__main__.py','client.py','server.py','store.py','listener.py','claude_route.py','mcp_bridge.py','native_client.py','native_mcp.py','native_listener.py','native_worker.py','native_monitor.py','human_inbox.py','human_mcp.py')
 SKILL=('SKILL.md','references/setup.md','references/human-inbox.md')
