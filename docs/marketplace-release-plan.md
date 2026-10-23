@@ -2,6 +2,8 @@
 
 Planning baseline: 2026-10-16. Goal: publish useful Claude and ChatGPT plugins through their official public distribution surfaces, moving quickly toward the short `unblock` identity. This document records current requirements and packaging. [Local development exports](local-plugins.md) now exist and pass format checks; no portal draft, namespace reservation, public submission or official install is claimed.
 
+2026-10-23 owner decision: the public publisher is **Fulcra Dynamics** and the original project source license is **Apache-2.0**. Canonical source and version0.7.2 exports carry that metadata, license and retained upstream notices. This resolves the choice; account verification, portal access, remote-host eligibility and actual listing acceptance still require their own evidence. A private personal plugin's stored owner is unchanged.
+
 ## Preferred names
 
 | Surface | Proposed identity | Status |

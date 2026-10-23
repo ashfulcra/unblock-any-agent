@@ -6,13 +6,26 @@ import tempfile
 import unittest
 
 class PackageTests(unittest.TestCase):
+    def test_exports_carry_approved_publisher_license_and_retained_notices(self):
+        from scripts.build_plugins import build
+        with tempfile.TemporaryDirectory() as temporary:
+            for platform,root in build(Path(temporary)/'exports').items():
+                manifest=json.loads((root/('.claude-plugin/plugin.json' if platform=='claude' else 'plugin.json')).read_text())
+                self.assertEqual(manifest['author']['name'],'Fulcra Dynamics')
+                self.assertEqual(manifest['license'],'Apache-2.0')
+                self.assertEqual((root/'LICENSE').read_bytes(),Path('LICENSE').read_bytes())
+                self.assertEqual((root/'THIRD_PARTY_NOTICES').read_bytes(),Path('THIRD_PARTY_NOTICES').read_bytes())
+                self.assertFalse((root/'unblock/fulcra_setup.py').exists())
+                self.assertNotIn('No project license has been selected',(root/'README.md').read_text())
+                if platform=='openai':self.assertEqual(manifest['extensions']['com.openai']['interface']['developerName'],'Fulcra Dynamics')
+
     def test_exports_are_contained_portable_and_have_a_working_copied_runtime(self):
         from scripts.build_plugins import build
         with tempfile.TemporaryDirectory() as temporary:
             exports=build(Path(temporary)/'exports')
             for platform,root in exports.items():
                 manifest=json.loads((root/('.claude-plugin/plugin.json' if platform=='claude' else 'plugin.json')).read_text())
-                self.assertEqual(manifest['name'],'unblock');self.assertEqual(manifest['version'],'0.7.1')
+                self.assertEqual(manifest['name'],'unblock');self.assertEqual(manifest['version'],'0.7.2')
                 self.assertEqual((root/'skills/unblock/SKILL.md').read_bytes(),Path('skills/unblock/SKILL.md').read_bytes())
                 self.assertTrue((root/'skills/unblock/references/setup.md').is_file())
                 for file in root.rglob('*'):
