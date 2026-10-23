@@ -33,20 +33,22 @@
 - [x] Recover current native obligations and inspect existing host evidence.
 - [x] Inspect the second-machine user chat and identify the missing explicit human inbox connection.
 - [x] Check actual Claude Code authentication without starting a session or changing credentials.
-- [ ] Confirm authorization to coordinate the named existing second-machine chat and a bounded Claude Code demonstration worker; do not send a prompt to another chat without explicit authorization.
-- [ ] Verify each participant's actual platform, tools, separate worker grant, permitted source and session destination. Retain precise connection failures instead of presenting a healthy queue.
+- [x] Confirm authorization to coordinate the named existing second-machine chat and a bounded Claude Code demonstration worker; do not send a prompt to another chat without explicit authorization.
+- [x] Verify each participant's actual platform, tools, separate worker grant, permitted source and session destination. Retain precise connection failures instead of presenting a healthy queue.
+
+Observed: Ash explicitly authorized coordination. The actual Claude Code session loaded the exported plugin and called ToolSearch, recovery, three allowed source reads, its own request, work update and final source recovery. It uses a separate agent-only grant. Codex raised its own request. The remote Codex chat verified its own owner/project and local human connection through stdio, but its app tools still require a supported MCP-server restart. Its broader configuration-preservation comparison failed without a retained prior snapshot; that uncertainty is not resolved or certified away.
 
 ## Task 2: Visible Answer And Continuation
 
-- [ ] Have at least two actual platform workers create clearly labeled demonstration requests under their own identities, with useful artifact goals and future expected updates.
-- [ ] Show both in the same human decision inbox, with identity, platform/environment, question and next step.
+- [x] Have at least two actual platform workers create clearly labeled demonstration requests under their own identities, with useful artifact goals and future expected updates.
+- [x] Show both in the same human decision inbox, with identity, platform/environment, question and next step.
 - [ ] Let Ash answer through the actual UI. Each responsible worker must recover its exact current revision/all answer IDs, reconcile prior actions, perform the bounded next step and read back its artifact before reporting resumed/completed.
 - [ ] Show source-backed transitions and resulting artifacts in the human view. One agent must not mark the other agent's work complete.
 - [ ] Delay one answer until its worker is idle; prove the declared pickup mechanism resumes it without Ash sending a second check prompt. Record real deadlines and observed latency.
 
 ## Task 3: Isolation And Recovery
 
-- [ ] Verify neighboring agents cannot read or act on each other's restricted work.
+- [x] Verify neighboring agents cannot read each other's restricted work. Own-request positive controls succeed; foreign-request queries are rejected with the existing service's generic 400 and no protected contents. Cross-agent action mutation is still to be exercised separately.
 - [ ] Retry delivery and recover a stopped/replaced session; preserve pending intentions and prove the artifact was not duplicated.
 - [ ] Verify a missed expected update is visible as a concern, not an invented human decision or completed work.
 - [ ] Repeat the complete chain on actual ChatGPT web when its supported authorized connection is available. Keep this row incomplete until its own evidence exists.
