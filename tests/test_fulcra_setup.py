@@ -79,6 +79,14 @@ class SetupTests(unittest.TestCase):
             with self.assertRaises(ValueError):self.configure()
             self.assertFalse(self.state.exists());self.project[key]=old
 
+    def test_malformed_domain_fails_cleanly_without_configuration(self):
+        for value in (None,42,[]):
+            self.project['domain']=value
+            try:self.configure()
+            except Exception as error:self.assertIsInstance(error,ValueError)
+            else:self.fail('Malformed project domain was accepted')
+            self.assertFalse(self.state.exists());self.assertFalse(self.env.exists())
+
     def test_check_only_uses_live_ownership_without_creating_private_files(self):
         result=self.configure(check_only=True)
         self.assertEqual(result['origin'],'https://fixture-unblock.my.fulcra.ai')

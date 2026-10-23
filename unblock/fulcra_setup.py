@@ -81,7 +81,7 @@ def configure(project_id,harness_annotation,product_annotation,state_path,env_pa
     if not isinstance(user,dict):raise ValueError('Current Fulcra owner is unverified')
     owner=reference(user.get('userid'))
     project=platform(token,'/user/v1/deploy/project/'+project_id)
-    if not isinstance(project,dict) or project.get('id')!=project_id or not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.my\.fulcra\.ai',project.get('domain','')):
+    if not isinstance(project,dict) or project.get('id')!=project_id or not isinstance(project.get('domain'),str) or not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.my\.fulcra\.ai',project['domain']):
         raise ValueError('Owned Fulcra deploy project is unverified')
     annotations=platform(token,'/user/v1alpha1/annotation?fulcra_userid='+owner+'&annotation_type=moment')
     if not isinstance(annotations,list):raise ValueError('Owned annotations are unavailable')

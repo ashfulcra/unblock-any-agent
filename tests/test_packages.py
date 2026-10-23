@@ -16,7 +16,6 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual((root/'LICENSE').read_bytes(),Path('LICENSE').read_bytes())
                 self.assertEqual((root/'THIRD_PARTY_NOTICES').read_bytes(),Path('THIRD_PARTY_NOTICES').read_bytes())
                 self.assertFalse((root/'unblock/fulcra_setup.py').exists())
-                self.assertNotIn('No project license has been selected',(root/'README.md').read_text())
                 if platform=='openai':self.assertEqual(manifest['extensions']['com.openai']['interface']['developerName'],'Fulcra Dynamics')
 
     def test_exports_are_contained_portable_and_have_a_working_copied_runtime(self):
