@@ -1,9 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './helpers/native-fixture.js';
+import { decisionSnapshot } from '../src/lib/server/unblock-core.js';
 
 
 const need={intent_id:'i1',need_key:'color',need:'Choose color',context:'Page work',recommendation:'Blue',next_action:'Apply color',parents:[]};
+
+test('human inbox answer checks the reviewed question, full answer set and uncertain actions at the service boundary',async()=>{
+ const f=fixture(),owner=(/** @type {string} */ op,/** @type {any} */ body={})=>f.service.handle(op,{cookieToken:f.token,body});
+ const enrollment=await owner('enroll',{intent_id:'reviewed-human-agent',agent_id:'alpha',name:'Alpha'});f.publish();
+ const worker=(/** @type {string} */ op,/** @type {any} */ body)=>f.service.handle(op,{token:enrollment.credential,body});
+ const request=await worker('request',need);f.publish();
+ const initial=(await owner('attention')).requests[0];
+ const body={intent_id:'reviewed-human-answer',request_id:request.request_id,revision:request.record_id,answer:'Blue',reviewed_snapshot:decisionSnapshot(initial)};
+ await owner('answer',{...body,intent_id:'intervening',answer:'Red',reviewed_snapshot:undefined});f.publish();
+ await assert.rejects(()=>owner('answer',body),/review again/);
+ const reviewed=(await owner('attention')).requests[0];
+ const saved={...body,reviewed_snapshot:decisionSnapshot(reviewed)};
+ const receipt=await owner('answer',saved);f.publish();
+ assert.equal((await owner('attention')).requests[0].state,'answer_conflict');
+ assert.equal((await owner('answer',saved)).record_id,receipt.record_id);
+ const later=(await owner('attention')).requests[0];
+ await worker('action',{intent_id:'uncertain-change',request_id:request.request_id,effect:'Uncertain marker'});f.publish();
+ await assert.rejects(()=>owner('answer',{...body,intent_id:'old-action-snapshot',reviewed_snapshot:decisionSnapshot(later)}),/review again/);
+ await worker('request',{...need,intent_id:'new-human-question',parents:[request.record_id],need:'Updated question'});f.publish();
+ assert.equal((await owner('answer',saved)).record_id,receipt.record_id);
+ const current=(await owner('attention')).requests[0];
+ await assert.rejects(()=>owner('answer',{...body,intent_id:'old-revision',reviewed_snapshot:decisionSnapshot(current)}),/review again/);
+});
 
 test('real native operation flow preserves pending receipt, scoped recovery and human attribution',async()=>{
  const f=fixture(),call=(/** @type {string} */ op,/** @type {any} */ body,cookie=f.token,token='')=>f.service.handle(op,{body,cookieToken:cookie,token});
@@ -133,4 +157,35 @@ test('renewal inherits scope and ancestor revocation denies descendants even aft
  await assert.rejects(()=>f.service.handle('identity',{token:next.credential}));
  assert.equal((await owner('attention',{})).grants.find((/** @type {any} */ g)=>g.grant_id===next.grant_id).revoked,true);
  await assert.rejects(()=>owner('enroll',{intent_id:'after-revocation',agent_id:'alpha',name:'Alpha',kind:'agent',environment:'env',expires_at:1150,renewal_of:next.grant_id}));
+});
+
+test('an agent can withdraw its obsolete own question without fabricating a human answer',async()=>{
+ const f=fixture(),owner=(/** @type {string} */ op,/** @type {any} */ body={})=>f.service.handle(op,{cookieToken:f.token,body});
+ const a=await owner('enroll',{intent_id:'withdraw-alpha',agent_id:'alpha',name:'Alpha'});f.publish();
+ const b=await owner('enroll',{intent_id:'withdraw-beta',agent_id:'beta',name:'Beta'});f.publish();
+ const agent=(/** @type {string} */ op,/** @type {any} */ body={})=>f.service.handle(op,{token:a.credential,body});
+ const req=await agent('request',need);f.publish();
+ const body={intent_id:'obsolete-question',request_id:req.request_id,revision:req.record_id,answers:[],stage:'withdrawn',evidence:'The existing connection loaded; no human action is required.'};
+ await assert.rejects(()=>owner('progress',body));
+ await assert.rejects(()=>f.service.handle('progress',{token:b.credential,body}));
+ const done=await agent('progress',body);f.publish();
+ const row=(await agent('attention')).requests[0];assert.equal(row.state,'withdrawn');assert.equal(row.answers.length,0);assert.equal(row.progress[0].payload.evidence,body.evidence);
+ await assert.rejects(()=>owner('answer',{intent_id:'late-after-withdraw',request_id:req.request_id,revision:req.record_id,answer:'Late answer'}),/withdrawn/);
+ await agent('request',{...need,intent_id:'reopened-question',parents:[req.record_id],context:'A new question is needed'});f.publish();
+ assert.equal((await agent('attention')).requests[0].state,'needs_you');assert.equal((await agent('progress',body)).record_id,done.record_id);
+});
+
+test('withdrawal needs the exact current answer set and cannot conceal uncertain actions',async()=>{
+ const f=fixture(),owner=(/** @type {string} */ op,/** @type {any} */ body={})=>f.service.handle(op,{cookieToken:f.token,body});
+ const a=await owner('enroll',{intent_id:'withdraw-safe',agent_id:'alpha',name:'Alpha'});f.publish();
+ const agent=(/** @type {string} */ op,/** @type {any} */ body={})=>f.service.handle(op,{token:a.credential,body});
+ const req=await agent('request',need);f.publish();
+ const body={intent_id:'withdraw-safe',request_id:req.request_id,revision:req.record_id,answers:[],stage:'withdrawn',evidence:'No human action needed'};
+ const answer=await owner('answer',{intent_id:'existing-answer',request_id:req.request_id,revision:req.record_id,answer:'Existing decision'});f.publish();
+ await assert.rejects(()=>agent('progress',body));
+ const action=await agent('action',{intent_id:'uncertain-effect',request_id:req.request_id,effect:'Verify an effect'});f.publish();
+ await assert.rejects(()=>agent('progress',{...body,answers:[answer.record_id]}),/uncertain/);
+ assert.equal((await agent('attention')).requests[0].state,'uncertain_action');
+ await agent('settle',{intent_id:'checked-effect',request_id:req.request_id,action:action.record_id,evidence:'Effect checked without repeat'});f.publish();
+ await agent('progress',{...body,answers:[answer.record_id]});f.publish();assert.equal((await agent('attention')).requests[0].state,'withdrawn');
 });

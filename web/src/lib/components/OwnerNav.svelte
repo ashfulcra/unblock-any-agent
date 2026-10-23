@@ -32,13 +32,13 @@
             href="/"
             class="text-fulcra-teal hover:text-fulcra-teal/80 font-medium"
           >
-            Home
+            Workspace
           </a>
           <a
             href="/harness"
             class="text-fulcra-teal hover:text-fulcra-teal/80 font-medium"
           >
-            Harness Dashboard
+            Build history
           </a>
         </div>
         <div class="text-fulcra-gray text-sm">

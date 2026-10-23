@@ -1,0 +1,21 @@
+Unblock Any Agent
+Published by Fulcra Dynamics.
+Original project contributions are licensed under Apache-2.0; copyrights remain
+with their respective contributors. This does not transfer account or source
+ownership.
+
+The optional integrations/fulcra-issuer source derives from Fulcra Dynamics MCP
+server code, Copyright 2025 Fulcra Dynamics, Apache License 2.0. Its original
+license remains intact at integrations/fulcra-issuer/LICENSE.upstream. Modified
+issuer files retain their own source notices.
+
+The web app is based on fulcradynamics/app-template-svelte at commit
+613a3d817df7933e73b6fb9cbda86fd7377b8e6b. Existing source notices and dependency
+license files remain applicable. No separate license file was present in the
+upstream template inventory inspected for this release; this notice does not
+assign new terms to third-party code or replace dependency licenses.
+
+Portable worker exports contain only their listed runtime and skill files;
+these notices apply to the components actually included. Fulcra deployment
+configuration, account bindings, private signing keys and credentials are not
+part of those exports.

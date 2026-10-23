@@ -16,6 +16,8 @@ npm run dev
 
 Set your own server-only `OWNER_USER_ID` and harness annotation in `.env` through the [Fulcra web-app skill](https://github.com/fulcradynamics/agent-skills/tree/main/skills/build-and-deploy-a-web-app). Reuse the annotation and deploy project stored in your own workspace progress. Never commit `.env`, tokens, owner identity or deployment bindings.
 
+For a new account-owned deployment, use the [verified setup command](../docs/personal-dashboard.md#build-the-fulcra-hosted-version) from the repository root before creating `.env`. It verifies your existing Fulcra deploy project and distinct owned harness/product annotations, then creates private environment configuration and a retained signing-key journal. `python3 -m unblock.fulcra_setup --help` lists the inputs; your deploying agent obtains them through the Fulcra skill. Repeating setup does not rotate the key or overwrite an unrelated `.env`. Add `--check` for a live read-only preflight. Core app persistence and communication use Fulcra annotations, with no external GCS bucket or shared issuer prerequisite.
+
 ```sh
 npm run check
 npm run build

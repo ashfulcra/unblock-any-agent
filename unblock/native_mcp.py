@@ -65,8 +65,8 @@ def build_server(config):
         return call('request',{'intent_id':intent('revise',payload),**payload})
 
     @server.tool(annotations=write)
-    def record_progress(request_id:str,revision:str,answer_ids:list[str],stage:Literal['acknowledged','resumed','completed'],evidence:str,reconciled:bool=False)->dict[str,Any]:
-        """Report observed work using the exact reviewed question and complete current answer set. Set reconciled only after actually resolving multiple answers. New answers invalidate older snapshots; already-recorded retries stay historical."""
+    def record_progress(request_id:str,revision:str,answer_ids:list[str],stage:Literal['acknowledged','resumed','completed','withdrawn'],evidence:str,reconciled:bool=False)->dict[str,Any]:
+        """Report observed work using the exact reviewed question and complete current answer set. Withdraw an obsolete own request with evidence when no human action is needed; only withdrawn permits zero answers and it cannot conceal uncertain effects. Set reconciled only after actually resolving multiple answers. New answers invalidate older snapshots; already-recorded retries stay historical."""
         payload={'request_id':reference(request_id),'revision':reference(revision),'answers':sorted(reference(a) for a in answer_ids),'stage':stage,'evidence':evidence,'reconciled':reconciled}
         return call('progress',{'intent_id':intent('progress',payload),**payload})
 
