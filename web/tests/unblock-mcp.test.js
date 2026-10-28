@@ -117,3 +117,12 @@ for(const fault of ['unauthorized','network','timeout','invalid-json']) {
   });
  }
 }
+
+test('hosted MCP withdrawal matches native own-request lifecycle without a human answer',async t=>{
+ const f=fixture(),e=await enroll(f,'alpha'),h=createNativeMcp({service:f.service,origin});
+ const {client}=await connect(t,h,()=>e.credential);
+ const r=data(await call(client,'ask_for_help',need));f.publish();
+ const result=await call(client,'record_progress',{request_id:r.request_id,revision:r.record_id,answer_ids:[],stage:'withdrawn',evidence:'The connection loaded; no human action is needed.'});
+ assert.notEqual(result.isError,true);f.publish();
+ const row=data(await call(client,'get_work',{request_id:r.request_id}));assert.equal(row.state,'withdrawn');assert.equal(row.answers.length,0);
+});

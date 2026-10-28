@@ -95,7 +95,7 @@ class NativeListener(Listener):
             me=self._identity();rows=self._work(me);self._flush()
         except SOURCE_ERRORS:
             return self._unknown({'attempts':[]})
-        pending=[r for r in rows if r['state'] not in ('resumed','completed')]
+        pending=[r for r in rows if r['state'] not in ('resumed','completed','withdrawn')]
         result={'checked':True,'pending':len(pending),'attempts':[],'errors':[]}
         with self.ledger() as db:
             db.execute('DELETE FROM pending');db.executemany('INSERT INTO pending VALUES (?)',[(r['id'],) for r in pending])
@@ -106,7 +106,7 @@ class NativeListener(Listener):
             try:item=self._work(self._identity(),candidate['id'])[0]
             except SOURCE_ERRORS:
                 source_failed=True;break
-            if item['state'] in ('resumed','completed'):continue
+            if item['state'] in ('resumed','completed','withdrawn'):continue
             if len(item['revisions'])!=1:
                 result['errors'].append({'request_id':item['id'],'code':'question_conflict_reconcile'});continue
             revision=item['revisions'][0]['id'];answers=sorted(a['id'] for a in item['answers'])
@@ -129,7 +129,7 @@ class NativeListener(Listener):
                 else:code=None
                 if code:
                     result['errors'].append({'request_id':item['id'],'code':code});continue
-                if prior and (now-prior[0]<self.retry_after or prior[1] in ('resumed','completed')):continue
+                if prior and (now-prior[0]<self.retry_after or prior[1] in ('resumed','completed','withdrawn')):continue
                 claim_id=str(uuid.uuid4())
                 db.execute('INSERT INTO claims VALUES (?,?,?)',(item['id'],claim_id,now+route['timeout']+30))
                 db.execute('INSERT INTO attempts VALUES (?,?,?,?) ON CONFLICT(delivery_key) DO UPDATE SET attempted=excluded.attempted,result=excluded.result',(key,item['id'],now,'dispatching'))

@@ -1,10 +1,11 @@
 {
   "name": "unblock",
-  "version": "0.5.1",
+  "version": "0.7.4",
   "description": "Request human help, recover continuity, and verify that an agent continued.",
   "author": {
-    "name": "ashfulcra"
+    "name": "Fulcra Dynamics"
   },
+  "license": "Apache-2.0",
   "repository": "https://github.com/ashfulcra/unblock-any-agent",
   "homepage": "https://github.com/ashfulcra/unblock-any-agent",
   "keywords": [
@@ -18,10 +19,12 @@
       "interface": {
         "displayName": "Unblock Any Agent",
         "shortDescription": "Help agents keep moving",
-        "longDescription": "Local development tools for human decisions, continuity recovery, and verified agent progress. Connects an enrolled Fulcra-native pilot or loopback proof profile and a separately configured environment listener.",
-        "developerName": "ashfulcra",
+        "longDescription": "Local development tools for human decisions, continuity recovery, and verified agent progress. Connects an enrolled Fulcra-native pilot or loopback proof profile and a separately configured environment listener. An optional separate human inbox offers an interactive decision view.",
+        "developerName": "Fulcra Dynamics",
         "category": "Productivity",
-        "capabilities": []
+        "capabilities": [
+          "Interactive"
+        ]
       }
     }
   }

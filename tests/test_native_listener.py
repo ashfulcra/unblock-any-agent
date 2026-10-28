@@ -64,6 +64,12 @@ class NativeListenerTests(unittest.TestCase):
         self.client.fail=True;result=listener.tick()
         self.assertFalse(result['checked']);self.assertEqual(result['pending_known'],1)
 
+    def test_withdrawn_question_is_retained_without_launching_a_receiver(self):
+        self.answer();self.row['state']='withdrawn';self.save()
+        result=self.listener().tick()
+        self.assertTrue(result['checked']);self.assertEqual(result['attempts'],[])
+        self.assertEqual(self.client.receipts,[])
+
     def test_multi_item_authorization_or_source_loss_stops_the_dispatch_batch(self):
         self.answer();neighbor=copy.deepcopy(self.row);neighbor['id']='00000000-0000-4000-8000-000000000009'
         self.source.write_text(json.dumps([self.row,neighbor]))

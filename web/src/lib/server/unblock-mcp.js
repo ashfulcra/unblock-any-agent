@@ -48,7 +48,7 @@ function workerServer(service,token) {
   const payload={need_key:work.revisions[0].payload.need_key,need:args.need,context:args.context,recommendation:args.recommendation,next_action:args.next_action,parents:[...args.parent_revisions].sort()};
   return native('request',{intent_id:intent('revise',payload),...payload});
  }));
- server.registerTool('record_progress',{description:'Record observed continuation using the reviewed question and full current answer set. Reconciled means actual reconciliation; stale retries stay historical.',inputSchema:z.strictObject({request_id:ref,revision:ref,answer_ids:z.array(ref),stage:z.enum(['acknowledged','resumed','completed']),evidence:text.max(16000),reconciled:z.boolean().default(false)}),annotations:write},args=>result(()=>{
+ server.registerTool('record_progress',{description:'Record observed continuation using the reviewed question and full current answer set. Withdraw an obsolete own request with evidence and no uncertain effects; only withdrawn permits zero answers. Reconciled means actual reconciliation; stale retries stay historical.',inputSchema:z.strictObject({request_id:ref,revision:ref,answer_ids:z.array(ref),stage:z.enum(['acknowledged','resumed','completed','withdrawn']),evidence:text.max(16000),reconciled:z.boolean().default(false)}),annotations:write},args=>result(()=>{
   const payload={request_id:args.request_id,revision:args.revision,answers:[...args.answer_ids].sort(),stage:args.stage,evidence:args.evidence,reconciled:args.reconciled};
   return native('progress',{intent_id:intent('progress',payload),...payload});
  }));

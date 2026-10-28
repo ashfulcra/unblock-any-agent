@@ -1,0 +1,1422 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Agent decisions</title>
+    <style>
+      :root {
+        font-family: var(--font-sans, system-ui, sans-serif);
+        color-scheme: light dark;
+        --bg: #13151e;
+        --card: #1c1f2b;
+        --ink: #edf0f7;
+        --muted: #a4adbf;
+        --line: #ffffff1d;
+        --accent: #91dec2;
+        --wait: #e7bf86;
+      }
+      :root[data-theme="light"] {
+        --bg: #f7f8fb;
+        --card: #fff;
+        --ink: #1c2535;
+        --muted: #59677c;
+        --line: #18253d22;
+        --accent: #126f58;
+        --wait: #805118;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-size: 14px;
+      }
+      main {
+        max-height: 740px;
+        overflow: auto;
+        padding: 22px;
+      }
+      :root[data-display-mode="fullscreen"] main {
+        max-height: none;
+        min-height: 100dvh;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+        color: inherit;
+      }
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      h1 {
+        font-size: 22px;
+        letter-spacing: -0.5px;
+        margin: 0;
+      }
+      header p {
+        color: var(--muted);
+        font-size: 12px;
+        margin: 8px 0 0;
+      }
+      .quiet {
+        border: 1px solid var(--line);
+        background: transparent;
+        border-radius: 8px;
+        padding: 9px 12px;
+      }
+      .status {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin: 22px 0 16px;
+      }
+      .status button {
+        border: 1px solid var(--line);
+        background: var(--card);
+        border-radius: 8px;
+        padding: 10px 13px;
+        font-size: 12px;
+      }
+      .status .active {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .filters {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 18px;
+      }
+      .filters input,
+      .filters select {
+        min-width: 0;
+        color: var(--ink);
+        background: var(--card);
+        border: 1px solid var(--line);
+        padding: 10px;
+        border-radius: 8px;
+      }
+      .filters input {
+        flex: 1;
+      }
+      .filters select {
+        max-width: 40%;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .card {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 17px;
+      }
+      .card:hover {
+        border-color: var(--accent);
+      }
+      .agent {
+        font-size: 14px;
+        font-weight: 650;
+        display: block;
+        overflow-wrap: anywhere;
+      }
+      .age {
+        font-size: 12px;
+        color: var(--wait);
+        display: block;
+        margin: 9px 0 14px;
+      }
+      .question {
+        font-size: 15px;
+        line-height: 1.5;
+        display: block;
+      }
+      .context {
+        font-size: 12px;
+        line-height: 1.65;
+        color: var(--muted);
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+        overflow: hidden;
+        margin-top: 9px;
+      }
+      .state {
+        font-size: 11px;
+        color: var(--accent);
+        display: block;
+        border-top: 1px solid var(--line);
+        padding-top: 11px;
+        margin-top: 14px;
+      }
+      .next-action {
+        display: block;
+        font-size: 12px;
+        line-height: 1.6;
+        margin-top: 12px;
+        color: var(--ink);
+      }
+      .work-notice {
+        grid-column: 1/-1;
+        margin: 0;
+      }
+      #work-summary:empty {
+        display: none;
+      }
+      #work-summary {
+        margin-bottom: 18px;
+      }
+      #work-summary .card {
+        border-left: 3px solid var(--accent);
+      }
+      .message {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 13px;
+        line-height: 1.6;
+        font-size: 12px;
+        margin: 15px 0;
+        color: var(--wait);
+      }
+      .message:empty {
+        display: none;
+      }
+      .empty {
+        padding: 32px 14px;
+        color: var(--muted);
+        line-height: 1.7;
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+      }
+      .detail {
+        border: 1px solid var(--line);
+        background: var(--card);
+        border-radius: 12px;
+        padding: 20px;
+      }
+      .detail header {
+        margin-bottom: 20px;
+      }
+      .detail h2 {
+        font-size: 21px;
+        line-height: 1.5;
+        letter-spacing: -0.4px;
+      }
+      .detail h3 {
+        font-size: 12px;
+        margin: 22px 0 8px;
+      }
+      .detail p,
+      .detail blockquote {
+        font-size: 13px;
+        line-height: 1.75;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .detail blockquote {
+        margin: 10px 0;
+        padding: 12px;
+        border-left: 2px solid var(--accent);
+        background: var(--bg);
+      }
+      .recommendation {
+        padding: 1px 14px 12px;
+        border-left: 2px solid var(--accent);
+        background: var(--bg);
+        border-radius: 6px;
+      }
+      .progress-summary {
+        border-left: 2px solid var(--accent);
+        padding-left: 14px;
+        margin: 0 0 24px;
+      }
+      .progress-summary h3 {
+        color: var(--accent);
+        margin-top: 0;
+      }
+      .detail .progress-time {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .detail textarea {
+        width: 100%;
+        min-height: 110px;
+        background: var(--bg);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        resize: vertical;
+        line-height: 1.6;
+      }
+      .primary {
+        background: var(--accent);
+        color: var(--bg);
+        border: 0;
+        border-radius: 8px;
+        width: 100%;
+        padding: 12px;
+        font-weight: 650;
+        margin-top: 10px;
+      }
+      .hint {
+        font-size: 11px !important;
+        color: var(--muted);
+        margin: 9px 0 0;
+      }
+      details {
+        border-top: 1px solid var(--line);
+        padding-top: 15px;
+        margin-top: 18px;
+      }
+      summary {
+        font-size: 12px;
+        cursor: pointer;
+        color: var(--muted);
+      }
+      footer {
+        color: var(--muted);
+        font-size: 10px;
+        margin-top: 20px;
+        line-height: 1.6;
+      }
+      @media (max-width: 560px) {
+        main {
+          padding: 16px;
+        }
+        .cards {
+          grid-template-columns: 1fr;
+        }
+        .filters {
+          flex-wrap: wrap;
+        }
+        .filters input {
+          flex-basis: 100%;
+        }
+        .filters select {
+          max-width: 100%;
+          width: 100%;
+        }
+        .status button {
+          flex: 1;
+          padding: 9px 8px;
+        }
+        h1 {
+          font-size: 20px;
+        }
+        .detail header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Agent decisions <span aria-hidden="true">↗</span></h1>
+          <p>Who’s waiting. What they need. What happens next.</p>
+        </div>
+        <button id="refresh" class="quiet" aria-label="Refresh decisions">
+          ↻
+        </button>
+      </header>
+      <div id="message" class="message" role="status"></div>
+      <div id="overview">
+        <nav id="status" class="status" aria-label="Work status"></nav>
+        <section id="work-summary" aria-label="Latest agent work"></section>
+        <div class="filters">
+          <input
+            id="search"
+            type="search"
+            aria-label="Search decisions"
+            placeholder="Find a decision, context or agent…"
+          /><select id="agents" aria-label="Filter by agent">
+            <option value="">All agents</option>
+          </select>
+        </div>
+        <section
+          id="cards"
+          class="cards"
+          aria-label="Agent decisions"
+        ></section>
+      </div>
+      <section
+        id="detail"
+        class="detail"
+        aria-label="Selected decision"
+        hidden
+      ></section>
+      <footer id="source">Connecting to your human inbox…</footer>
+    </main>
+    <script type="module">
+      const $ = (id) => document.getElementById(id),
+        el = (tag, text, cls) => {
+          const node = document.createElement(tag);
+          if (text !== undefined) node.textContent = text;
+          if (cls) node.className = cls;
+          return node;
+        };
+      const labels = {
+        needs_you: "Decision needed",
+        conflict: "Question changed",
+        answer_conflict: "Review answers",
+        uncertain_action: "Verify action",
+        awaiting_pickup: "Awaiting pickup",
+        acknowledged: "Answer read",
+        resumed: "Working",
+        completed: "Completed",
+        withdrawn: "No longer needed",
+      };
+      const lane = (state) =>
+        [
+          "needs_you",
+          "conflict",
+          "answer_conflict",
+          "uncertain_action",
+        ].includes(state)
+          ? "needs_you"
+          : ["completed", "withdrawn"].includes(state)
+            ? "done"
+            : "with_agents";
+      const excerpt = (value, limit) => {
+        const text = (value || "").replace(/\s+/g, " ").trim();
+        return text.length <= limit
+          ? text
+          : text.slice(0, limit).replace(/\s+\S*$/, "") + "…";
+      };
+      const timing = (row) =>
+        lane(row.state) === "needs_you"
+          ? `Waiting · ${age(row.created_at)}`
+          : `Requested · ${Number.isFinite(Date.parse(row.created_at || "")) ? new Date(row.created_at).toLocaleString() : "date unknown"}`;
+      function progressView(row) {
+        const titles = {
+          awaiting_pickup: "Awaiting agent pickup",
+          acknowledged: "Answer read",
+          resumed: "Work resumed",
+          completed: "Completed",
+          withdrawn: "No longer needed",
+        };
+        const title = titles[row.state];
+        if (!title) return null;
+        const events = (row.progress || [])
+          .filter((p) => p.payload.stage === row.state)
+          .sort(
+            (a, b) =>
+              (Date.parse(b.recorded_at || "") || 0) -
+              (Date.parse(a.recorded_at || "") || 0),
+          );
+        return {
+          title,
+          evidence:
+            events[0]?.payload.evidence ||
+            (row.state === "awaiting_pickup"
+              ? "Your decision is saved. Agent pickup has not been observed yet."
+              : "No additional progress details supplied."),
+          at: events[0]?.recorded_at || null,
+        };
+      }
+      let last = null,
+        detail = null,
+        selected = "",
+        tab = "needs_you",
+        workspace = "",
+        ready = false,
+        interactive = false,
+        hostOrigin = "*",
+        busy = false;
+      const drafts = new Map(),
+        pending = new Map(),
+        calls = new Map();
+      const pendingFor = (id) =>
+        [...pending.values()].filter((p) => p.request_id === id);
+      const currentIntent = () =>
+        pendingFor(selected).find(
+          (p) =>
+            p.revision === detail?.request.revisions[0]?.id &&
+            p.reviewed_snapshot === detail?.reviewed_snapshot,
+        );
+      function removePending(intent) {
+        pending.delete(intent.intent_id);
+        save("pending", intent.intent_id, null);
+      }
+      let sequence = 0;
+      let selectionVersion = 0;
+      const age = (value) => {
+        const start = Date.parse(value || "");
+        if (!Number.isFinite(start) || start > Date.now())
+          return "Waiting time unknown";
+        const m = Math.floor((Date.now() - start) / 60000);
+        return m < 1
+          ? "Just now"
+          : m < 60
+            ? `${m}m`
+            : m < 1440
+              ? `${Math.floor(m / 60)}h ${m % 60}m`
+              : `${Math.floor(m / 1440)}d ${Math.floor(m / 60) % 24}h`;
+      };
+      const storageKey = (kind, id) =>
+        `unblock-human:${workspace}:${kind}:${id}`;
+      function save(kind, id, value) {
+        try {
+          if (value)
+            sessionStorage.setItem(storageKey(kind, id), JSON.stringify(value));
+          else sessionStorage.removeItem(storageKey(kind, id));
+        } catch {}
+      }
+      function bindWorkspace(id) {
+        if (!id || workspace === id) return;
+        if (workspace && workspace !== id) {
+          last = null;
+          detail = null;
+          selected = "";
+          drafts.clear();
+          pending.clear();
+        }
+        workspace = id;
+        try {
+          const keys = Array.from({ length: sessionStorage.length }, (_, i) =>
+            sessionStorage.key(i),
+          );
+          for (const key of keys) {
+            const prefix = `unblock-human:${workspace}:`;
+            if (key?.startsWith(prefix)) {
+              const rest = key.slice(prefix.length),
+                separator = rest.indexOf(":"),
+                kind = rest.slice(0, separator),
+                id = rest.slice(separator + 1);
+              const value = JSON.parse(sessionStorage.getItem(key));
+              if (kind === "draft") drafts.set(id, value);
+              else if (kind === "pending" && value.intent_id) {
+                pending.set(value.intent_id, value);
+                if (id !== value.intent_id) {
+                  sessionStorage.removeItem(key);
+                  save("pending", value.intent_id, value);
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+      function notify(method, params = {}) {
+        window.parent.postMessage(
+          { jsonrpc: "2.0", method, params },
+          hostOrigin,
+        );
+      }
+      function rpc(method, params) {
+        return new Promise((resolve, reject) => {
+          const id = `unblock-${++sequence}`,
+            timer = setTimeout(() => {
+              calls.delete(id);
+              reject(
+                new Error(
+                  "Connection timed out. Retained work and answer intents remain pending.",
+                ),
+              );
+            }, 30000);
+          calls.set(id, { resolve, reject, timer });
+          window.parent.postMessage(
+            { jsonrpc: "2.0", id, method, params },
+            hostOrigin,
+          );
+        });
+      }
+      async function tool(name, args = {}) {
+        if (!interactive)
+          throw new Error(
+            "This host has not enabled interactive tools. Use the inbox tools in chat.",
+          );
+        const result = await rpc("tools/call", { name, arguments: args });
+        if (result.isError)
+          throw new Error(
+            result.content?.map((c) => c.text || "").join(" ") ||
+              "Tool unavailable; retained work remains pending.",
+          );
+        return result.structuredContent;
+      }
+      function message(text) {
+        $("message").textContent = text || "";
+      }
+      function applyInbox(data) {
+        if (!data?.items) return;
+        bindWorkspace(data.workspace_id);
+        const first = !last;
+        last = data;
+        ready = data.source === "checked";
+        for (const p of data.pending_answers || []) {
+          pending.set(p.intent_id, p);
+          save("pending", p.intent_id, p);
+        }
+        if (first && pending.size) tab = "pending";
+        if (!ready)
+          message(
+            data.last_known
+              ? "Connection unavailable. Showing last-known work; current status is unknown."
+              : "Your work is unavailable. Pending decisions are unknown until the connection recovers.",
+          );
+        else if (pending.size)
+          message(
+            `${pending.size} saved decision intent(s) need verification. Open Verify answers to reconcile the original submission.`,
+          );
+        else message("");
+        renderOverview();
+        if (detail) renderDetail();
+      }
+      function applyDetail(data) {
+        if (!data?.request) return;
+        bindWorkspace(data.workspace_id);
+        detail = data;
+        selected = data.request.id;
+        ready = data.source === "checked";
+        renderDetail();
+      }
+      function applyWorkDetail(data) {
+        if (!data?.expectation) return;
+        bindWorkspace(data.workspace_id);
+        detail = data;
+        selected = "work:" + data.expectation.id;
+        renderDetail();
+      }
+      const workLabels = {
+        working: "Agent reports working",
+        due: "Update overdue",
+        investigate: "Missed update recorded",
+        conflict: "Concurrent updates — review needed",
+        completed: "Work completed",
+        cancelled: "Work cancelled",
+      };
+      const workTime = (value) =>
+        Number.isFinite(Date.parse(value || ""))
+          ? new Date(value).toLocaleString()
+          : "time unknown";
+      function workCard(item) {
+        const b = el("button", undefined, "card");
+        b.dataset.request = "work:" + item.expectation_id;
+        b.append(
+          el("span", item.agent_name, "agent"),
+          el("span", workLabels[item.state] || "Work status unknown", "age"),
+        );
+        for (const update of item.updates) {
+          b.append(
+            el("strong", update.summary, "question"),
+            el("span", update.evidence, "context"),
+            el("span", "Next: " + update.next_action, "next-action"),
+          );
+          b.append(
+            el(
+              "span",
+              "Last update: " + workTime(update.recorded_at),
+              "context",
+            ),
+          );
+          if (update.next_update_at !== null)
+            b.append(
+              el(
+                "span",
+                "Update expected by " +
+                  new Date(update.next_update_at * 1000).toLocaleString(),
+                "context",
+              ),
+            );
+        }
+        b.append(el("span", "Open work details  ↗", "state"));
+        b.onclick = () => openWork(item.expectation_id);
+        return b;
+      }
+      function renderOverview() {
+        if (!last) return;
+        $("overview").hidden = !!selected;
+        $("detail").hidden = !selected;
+        const counts = last.counts;
+        const workCounts = last.work_counts;
+        const workRows = last.work_items || [];
+        const workTab = tab === "work" || tab === "investigate";
+        $("status").replaceChildren();
+        for (const [id, title] of [
+          ["needs_you", "Needs you"],
+          ["with_agents", "With agents"],
+          ["work", "Agent work"],
+          ["investigate", "Investigate"],
+          ["done", "Done"],
+          ...(pending.size ? [["pending", "Verify answers"]] : []),
+        ]) {
+          const b = el(
+            "button",
+            `${id === "pending" ? pending.size : id === "work" ? (workCounts ? workCounts.working + workCounts.investigate + workCounts.done : "—") : id === "investigate" ? (workCounts?.investigate ?? "—") : (counts?.[id] ?? "—")}  ${title}`,
+            id === tab ? "active" : "",
+          );
+          b.onclick = () => {
+            tab = id;
+            renderOverview();
+          };
+          $("status").append(b);
+        }
+        const choice = $("agents").value;
+        const names = new Map(
+          [...last.items, ...workRows].map((i) => [i.agent_id, i.agent_name]),
+        );
+        $("agents").replaceChildren(
+          new Option("All agents", ""),
+          ...Array.from(names, ([id, name]) => new Option(name, id)),
+        );
+        $("agents").value = names.has(choice) ? choice : "";
+        const terms = $("search")
+          .value.toLocaleLowerCase()
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean);
+        const rows = last.items.filter(
+          (i) =>
+            (tab === "pending"
+              ? pendingFor(i.request_id).length > 0
+              : lane(i.state) === tab) &&
+            (!$("agents").value || i.agent_id === $("agents").value) &&
+            terms.every((t) =>
+              [i.agent_name, i.agent_id, i.decision, i.context]
+                .join(" ")
+                .toLocaleLowerCase()
+                .includes(t),
+            ),
+        );
+        $("cards").replaceChildren();
+        $("work-summary").replaceChildren();
+        if (workTab) {
+          if (last.work_source !== "checked")
+            $("cards").append(
+              el(
+                "p",
+                "Agent work source unavailable. Showing last-known updates; current work and deadlines are unknown.",
+                "message work-notice",
+              ),
+            );
+          else
+            $("cards").append(
+              el(
+                "p",
+                tab === "investigate"
+                  ? "Missed or conflicting updates need investigation. Their cause is unknown; they are separate from decisions that need you."
+                  : "Concrete agent updates, next actions and declared deadlines. A source check or saved answer is not a work update.",
+                "message work-notice",
+              ),
+            );
+          const shown = workRows.filter(
+            (i) =>
+              (tab !== "investigate" ||
+                ["due", "investigate", "conflict"].includes(i.state)) &&
+              (!$("agents").value || i.agent_id === $("agents").value) &&
+              terms.every((t) =>
+                [
+                  i.agent_name,
+                  i.agent_id,
+                  ...i.updates.flatMap((u) => [
+                    u.summary,
+                    u.evidence,
+                    u.next_action,
+                  ]),
+                ]
+                  .join(" ")
+                  .toLocaleLowerCase()
+                  .includes(t),
+              ),
+          );
+          for (const item of shown) $("cards").append(workCard(item));
+          if (!shown.length)
+            $("cards").append(
+              el(
+                "p",
+                last.work_source !== "checked"
+                  ? "Agent work coverage is unknown."
+                  : workRows.length
+                    ? "No work updates match this view."
+                    : "No agent work updates have been declared in the checked workspace.",
+                "empty",
+              ),
+            );
+          $("source").textContent =
+            last.work_source === "checked"
+              ? `Agent work checked ${workTime(last.work_checked_at)}. A deadline is a commitment, not proof of an active monitor.`
+              : "Agent work unavailable · last-known updates retained.";
+          return;
+        }
+        const recentWork = [...workRows].sort(
+          (a, b) =>
+            Math.max(
+              0,
+              ...b.updates.map((u) => Date.parse(u.recorded_at || "") || 0),
+            ) -
+            Math.max(
+              0,
+              ...a.updates.map((u) => Date.parse(u.recorded_at || "") || 0),
+            ),
+        );
+        const activeWork =
+          recentWork.find(
+            (i) =>
+              !["completed", "cancelled"].includes(i.state) &&
+              (!$("agents").value || i.agent_id === $("agents").value),
+          ) ||
+          recentWork.find(
+            (i) => !$("agents").value || i.agent_id === $("agents").value,
+          );
+        if (activeWork) {
+          $("work-summary").append(
+            el(
+              "p",
+              last.work_source === "checked"
+                ? "Latest agent work"
+                : "Last-known agent work · current status unknown",
+              "context",
+            ),
+            workCard(activeWork),
+          );
+        }
+        for (const item of rows) {
+          const b = el("button", undefined, "card");
+          b.dataset.request = item.request_id;
+          b.append(
+            el("span", item.agent_name, "agent"),
+            el("span", timing(item), "age"),
+            el("strong", item.decision, "question"),
+            el("span", item.context, "context"),
+            ...(item.next_action
+              ? [
+                  el(
+                    "span",
+                    "After your answer: " + item.next_action,
+                    "next-action",
+                  ),
+                ]
+              : []),
+            el("span", `${labels[item.state] || "Needs review"}  ↗`, "state"),
+          );
+          b.onclick = () => openDecision(item.request_id);
+          $("cards").append(b);
+        }
+        if (!rows.length)
+          $("cards").append(
+            el(
+              "p",
+              !ready && !last.last_known
+                ? "Work status is unknown."
+                : last.items.length
+                  ? "No decisions match this view."
+                  : "No pending decisions in the checked workspace.",
+              "empty",
+            ),
+          );
+        $("source").textContent = ready
+          ? `Workspace checked ${new Date(last.checked_at).toLocaleTimeString()}. Sending an answer does not prove pickup.`
+          : "Source unavailable · last-known work and pending answers retained.";
+      }
+      function section(title, text, parent = $("detail")) {
+        parent.append(
+          el("h3", title),
+          el("p", text || "No additional context supplied."),
+        );
+      }
+      function compactSection(title, text, limit, parent = $("detail")) {
+        section(title, excerpt(text, limit), parent);
+        if ((text || "").length > limit) {
+          const more = el("details");
+          more.append(
+            el("summary", "Read full " + title.toLocaleLowerCase()),
+            el("p", text),
+          );
+          parent.append(more);
+        }
+      }
+      function renderDetail() {
+        if (!detail || !selected) return;
+        if (detail.expectation) {
+          renderWorkDetail();
+          return;
+        }
+        const row = detail.request,
+          hadFocus = document.activeElement?.id === "answer",
+          cursor = hadFocus ? document.activeElement.selectionStart : null;
+        const panel = $("detail");
+        panel.replaceChildren();
+        $("overview").hidden = true;
+        panel.hidden = false;
+        const head = el("header"),
+          identity = el("div");
+        identity.append(
+          el("strong", detail.agent_name || row.agent_id, "agent"),
+          el(
+            "span",
+            `${timing(row)} · ${labels[row.state] || row.state}`,
+            "age",
+          ),
+        );
+        const close = el("button", "Back to decisions", "quiet");
+        close.onclick = closeDetail;
+        head.append(identity, close);
+        panel.append(head);
+        for (const q of row.revisions) {
+          panel.append(el("h2", q.payload.need));
+          const progress = progressView(row);
+          if (progress && row.revisions.length === 1) {
+            const summary = el("section", undefined, "progress-summary");
+            summary.setAttribute("aria-label", "Last observed agent progress");
+            compactSection(progress.title, progress.evidence, 220, summary);
+            if (progress.at)
+              summary.append(
+                el(
+                  "p",
+                  "Observed " + new Date(progress.at).toLocaleString(),
+                  "progress-time",
+                ),
+              );
+            panel.append(summary);
+          }
+          compactSection("What you need to know", q.payload.context, 400);
+          const rec = el("div", undefined, "recommendation");
+          compactSection(
+            "Agent’s recommendation",
+            q.payload.recommendation,
+            300,
+            rec,
+          );
+          if (
+            row.revisions.length === 1 &&
+            detail.can_answer &&
+            !["completed", "withdrawn"].includes(row.state) &&
+            q.payload.recommendation.trim()
+          ) {
+            const snapshot = detail.reviewed_snapshot;
+            const recommend = el("button", "Send recommendation", "primary");
+            recommend.disabled = busy || !ready || !interactive || !!currentIntent();
+            recommend.onclick = () => {
+              if (
+                busy || !ready || !interactive || currentIntent() ||
+                selected !== row.id || detail.request !== row ||
+                detail.reviewed_snapshot !== snapshot || !detail.can_answer
+              ) return;
+              const draft = {
+                request_id: row.id,
+                revision: q.id,
+                reviewed_snapshot: snapshot,
+                answer: q.payload.recommendation,
+              };
+              drafts.set(row.id, draft);
+              save("draft", row.id, draft);
+              return sendDecision();
+            };
+            rec.append(recommend);
+          }
+          panel.append(rec);
+          const next = el("details");
+          next.append(
+            el("summary", "What happens next"),
+            el("p", q.payload.next_action),
+          );
+          panel.append(next);
+        }
+        if (row.answers.length) {
+          section("Your saved decisions", "");
+          panel.lastChild.remove();
+          for (const a of row.answers)
+            panel.append(el("blockquote", a.payload.answer));
+        }
+        if (row.uncertain_actions.length) {
+          for (const action of row.uncertain_actions)
+            section("Verify before repeating", action.payload.effect);
+        }
+        const matchingIntent = currentIntent();
+        for (const earlier of pendingFor(selected).filter(
+          (p) => p !== matchingIntent,
+        )) {
+          section(
+            "Earlier answer needs verification",
+            "Its outcome is still uncertain. Answering the current question does not withdraw this earlier submission.",
+          );
+          panel.append(el("blockquote", earlier.answer));
+          const verify = el("button", "Verify earlier answer", "quiet");
+          verify.disabled = busy || !ready || !interactive;
+          verify.onclick = () => sendDecision(earlier);
+          panel.append(verify);
+        }
+        if (detail.can_answer || matchingIntent) {
+          const draft = drafts.get(selected),
+            intent = matchingIntent;
+          section(
+            row.answers.length ? "Add a clarification" : "Your decision",
+            "",
+          );
+          panel.lastChild.remove();
+          const area = el("textarea");
+          area.id = "answer";
+          area.setAttribute("aria-label", "Your decision");
+          area.maxLength = 16000;
+          area.value = intent?.answer || draft?.answer || "";
+          area.disabled = !!intent;
+          area.placeholder = "Give the agent what it needs to move forward…";
+          area.oninput = () => {
+            const old = drafts.get(selected),
+              q = row.revisions[0];
+            const value = old
+              ? { ...old, answer: area.value }
+              : {
+                  request_id: selected,
+                  revision: q.id,
+                  reviewed_snapshot: detail.reviewed_snapshot,
+                  answer: area.value,
+                };
+            drafts.set(selected, value);
+            save("draft", selected, value);
+            send.disabled =
+              busy ||
+              !ready ||
+              !interactive ||
+              !area.value.trim() ||
+              value.reviewed_snapshot !== detail.reviewed_snapshot;
+          };
+          panel.append(area);
+          if (
+            draft &&
+            !intent &&
+            draft.reviewed_snapshot !== detail.reviewed_snapshot
+          ) {
+            panel.append(
+              el(
+                "p",
+                "The question or answers changed. Review the full current decision before sending.",
+                "message",
+              ),
+            );
+            const review = el(
+              "button",
+              "I reviewed this updated decision",
+              "quiet",
+            );
+            review.onclick = () => {
+              const currentDraft = drafts.get(row.id);
+              if (!currentDraft || selected !== row.id) return;
+              const next = {
+                ...currentDraft,
+                revision: row.revisions[0].id,
+                reviewed_snapshot: detail.reviewed_snapshot,
+              };
+              drafts.set(selected, next);
+              save("draft", selected, next);
+              renderDetail();
+            };
+            panel.append(review);
+          }
+          const send = el(
+            "button",
+            intent ? "Retry saved decision" : "Send decision  ↗",
+            "primary",
+          );
+          send.disabled =
+            busy ||
+            !ready ||
+            !interactive ||
+            (!intent &&
+              (!area.value.trim() ||
+                draft?.reviewed_snapshot !== detail.reviewed_snapshot));
+          send.onclick = () => sendDecision();
+          panel.append(
+            send,
+            el(
+              "p",
+              intent
+                ? "Original intent retained. Retrying reconciles the same answer."
+                : "Your decision is saved separately from worker pickup and completion.",
+              "hint",
+            ),
+          );
+          if (hadFocus) {
+            area.focus();
+            if (cursor !== null) area.setSelectionRange(cursor, cursor);
+          }
+        } else if (row.revisions.length !== 1)
+          panel.append(
+            el(
+              "p",
+              "The agent must reconcile the question versions before you answer.",
+              "message",
+            ),
+          );
+        const progressHistory = el("details");
+        progressHistory.append(
+          el(
+            "summary",
+            `Agent progress history (${row.progress?.length || 0})`,
+          ),
+        );
+        for (const p of row.progress || [])
+          section(
+            p.payload.stage === "withdrawn"
+              ? "No longer needed"
+              : p.payload.stage === "completed"
+                ? "Completed"
+                : p.payload.stage === "resumed"
+                  ? "Work resumed"
+                  : "Answer read",
+            p.payload.evidence,
+            progressHistory,
+          );
+        if (row.progress?.length) panel.append(progressHistory);
+        const history = el("details");
+        history.append(el("summary", "Earlier context & activity"));
+        for (const q of row.history || []) {
+          history.append(el("h3", q.payload.need), el("p", q.payload.context));
+        }
+        for (const a of row.stale_answers || [])
+          history.append(
+            el("blockquote", "Earlier decision: " + a.payload.answer),
+          );
+        panel.append(history);
+        notify("ui/notifications/size-changed", {
+          height: Math.min(document.documentElement.scrollHeight, 760),
+        });
+      }
+      function renderWorkDetail() {
+        const row = detail.expectation,
+          panel = $("detail");
+        panel.replaceChildren();
+        $("overview").hidden = true;
+        panel.hidden = false;
+        const head = el("header"),
+          identity = el("div"),
+          close = el("button", "Back to work and decisions", "quiet");
+        identity.append(
+          el("strong", detail.agent_name || row.agent_id, "agent"),
+          el("span", workLabels[row.state] || "Unknown work state", "age"),
+        );
+        close.onclick = closeDetail;
+        head.append(identity, close);
+        panel.append(head);
+        if (last && last.work_source !== "checked")
+          panel.append(
+            el(
+              "p",
+              "Work source unavailable. These are retained details; current status is unknown.",
+              "message",
+            ),
+          );
+        if (row.state === "conflict")
+          panel.append(
+            el(
+              "p",
+              "Concurrent updates need agent reconciliation. All current versions remain visible; no deadline was silently chosen.",
+              "message",
+            ),
+          );
+        if (["due", "investigate"].includes(row.state))
+          panel.append(
+            el(
+              "p",
+              row.state === "due"
+                ? "The declared update is overdue. No persisted missed-update check is visible yet."
+                : "A missed update was recorded. Its cause is unknown. This is not automatically a question for you.",
+              "message",
+            ),
+          );
+        for (const revision of row.revisions) {
+          const p = revision.payload;
+          panel.append(el("h2", p.summary));
+          section("Latest evidence", p.evidence, panel);
+          section("Next action", p.next_action, panel);
+          section("Last update", workTime(revision.recorded_at), panel);
+          if (p.next_update_at !== null)
+            section(
+              "Update expected by",
+              new Date(p.next_update_at * 1000).toLocaleString(),
+              panel,
+            );
+          compactSection("Context", p.context, 400, panel);
+        }
+        if (row.link_conflict)
+          panel.append(
+            el(
+              "p",
+              "Linked questions conflict and need agent reconciliation. No human question was closed.",
+              "message",
+            ),
+          );
+        for (const id of row.request_ids || []) {
+          const button = el("button", "Open linked decision", "quiet");
+          button.onclick = () => openDecision(id);
+          panel.append(button);
+        }
+        const history = el("details");
+        history.append(
+          el("summary", `Work update history (${row.history.length})`),
+        );
+        for (const r of row.history)
+          section(r.payload.summary, r.payload.evidence, history);
+        for (const o of row.observations)
+          section(
+            "Missed-update check",
+            `Recorded for revision ${o.payload.revision}. ${row.current_observations.some((current) => current.id === o.id) ? "Current concern." : "Historical concern retained."}`,
+            history,
+          );
+        panel.append(
+          history,
+          el(
+            "p",
+            "This view reports declared work. It does not execute the agent or start a background monitor.",
+            "context",
+          ),
+        );
+      }
+      async function refresh() {
+        const requestId = selected,
+          version = selectionVersion;
+        let inboxChecked = false;
+        try {
+          const data = await tool("show_inbox", { include_completed: true });
+          applyInbox(data);
+          inboxChecked = ready;
+          if (
+            requestId &&
+            selected === requestId &&
+            version === selectionVersion &&
+            ready
+          ) {
+            const isWork = requestId.startsWith("work:");
+            const result = await tool(
+              isWork ? "get_work_update" : "get_decision",
+              isWork
+                ? { expectation_id: requestId.slice(5) }
+                : { request_id: requestId },
+            );
+            if (selected === requestId && version === selectionVersion)
+              (isWork ? applyWorkDetail : applyDetail)(result);
+          }
+        } catch (error) {
+          if (!inboxChecked || !requestId.startsWith("work:")) ready = false;
+          if (last)
+            last = {
+              ...last,
+              source: inboxChecked ? last.source : "unavailable",
+              counts: inboxChecked ? last.counts : null,
+              work_source: "unavailable",
+              work_counts: null,
+              work_last_known: true,
+            };
+          message(error.message);
+          renderOverview();
+          if (detail) renderDetail();
+        }
+      }
+      async function openDecision(id) {
+        const version = ++selectionVersion;
+        try {
+          const data = await tool("get_decision", { request_id: id });
+          if (version !== selectionVersion) return;
+          applyDetail(data);
+          $("detail").querySelector("button")?.focus();
+          message("");
+        } catch (error) {
+          ready = false;
+          message(error.message);
+        }
+      }
+      async function openWork(id) {
+        const version = ++selectionVersion;
+        try {
+          const data = await tool("get_work_update", { expectation_id: id });
+          if (version !== selectionVersion) return;
+          applyWorkDetail(data);
+          $("detail").querySelector("button")?.focus();
+          message("");
+        } catch (error) {
+          message(error.message);
+        }
+      }
+      function closeDetail() {
+        ++selectionVersion;
+        const id = selected;
+        selected = "";
+        detail = null;
+        renderOverview();
+        Array.from($("cards").querySelectorAll("button"))
+          .find((b) => b.dataset.request === id)
+          ?.focus();
+      }
+      async function sendDecision(savedIntent = null) {
+        if (busy || !selected) return;
+        const requestId = savedIntent?.request_id || selected,
+          version = selectionVersion;
+        let intent = savedIntent || currentIntent();
+        if (!intent) {
+          const draft = drafts.get(requestId);
+          if (!draft || draft.reviewed_snapshot !== detail.reviewed_snapshot)
+            return;
+          intent = { ...draft, intent_id: crypto.randomUUID() };
+          pending.set(intent.intent_id, intent);
+          save("pending", intent.intent_id, intent);
+        }
+        busy = true;
+        renderDetail();
+        try {
+          const outcome = await tool("answer_decision", intent);
+          if (outcome.visibility === "visible") {
+            removePending(intent);
+            const draft = drafts.get(requestId);
+            if (
+              draft?.revision === intent.revision &&
+              draft?.reviewed_snapshot === intent.reviewed_snapshot &&
+              draft?.answer === intent.answer
+            ) {
+              drafts.delete(requestId);
+              save("draft", requestId, null);
+            }
+            message(
+              outcome.current_question === false
+                ? "Saved against an earlier question. Review the current decision."
+                : "Decision read back. Watching for actual agent progress.",
+            );
+          } else {
+            if (outcome.visibility === "rejected") {
+              removePending(intent);
+            }
+            message(outcome.reason);
+          }
+          await refresh();
+        } catch (error) {
+          if (
+            /decision_changed_review_again|invalid_human_answer/.test(
+              error.message,
+            )
+          ) {
+            removePending(intent);
+          }
+          ready = false;
+          message(error.message);
+          try {
+            if (selected === requestId && version === selectionVersion) {
+              const result = await tool("get_decision", {
+                request_id: requestId,
+              });
+              if (selected === requestId && version === selectionVersion)
+                applyDetail(result);
+            }
+          } catch {}
+        } finally {
+          busy = false;
+          renderDetail();
+        }
+      }
+      window.addEventListener("message", (event) => {
+        if (event.source !== window.parent || event.data?.jsonrpc !== "2.0")
+          return;
+        const m = event.data;
+        if (m.id && calls.has(m.id)) {
+          const call = calls.get(m.id);
+          clearTimeout(call.timer);
+          calls.delete(m.id);
+          if (event.origin !== "null") hostOrigin = event.origin;
+          m.error
+            ? call.reject(
+                new Error(
+                  m.error.message || "Host call failed; pending work retained.",
+                ),
+              )
+            : call.resolve(m.result);
+          return;
+        }
+        if (m.method === "ui/notifications/tool-result") {
+          const data = m.params?.structuredContent;
+          if (data?.items) applyInbox(data);
+          else if (
+            data?.expectation &&
+            (selectionVersion === 0 ||
+              selected === "work:" + data.expectation.id)
+          )
+            applyWorkDetail(data);
+          else if (
+            data?.request &&
+            (selectionVersion === 0 || selected === data.request.id)
+          )
+            applyDetail(data);
+        }
+        if (m.method === "ui/notifications/host-context-changed") {
+          if (m.params?.theme)
+            document.documentElement.dataset.theme = m.params.theme;
+          if (m.params?.displayMode)
+            document.documentElement.dataset.displayMode = m.params.displayMode;
+        }
+        if (m.method === "ui/resource-teardown") {
+          clearInterval(poll);
+          for (const call of calls.values()) {
+            clearTimeout(call.timer);
+            call.reject(new Error("View closed; pending intents retained."));
+          }
+          calls.clear();
+          window.parent.postMessage(
+            { jsonrpc: "2.0", id: m.id, result: {} },
+            hostOrigin,
+          );
+        }
+      });
+      $("refresh").onclick = refresh;
+      $("search").oninput = renderOverview;
+      $("agents").onchange = renderOverview;
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && selected) {
+          e.preventDefault();
+          closeDetail();
+        }
+      });
+      const poll = setInterval(() => {
+        if (interactive && !busy) refresh();
+      }, 15000);
+      rpc("ui/initialize", {
+        appInfo: { name: "unblock-inbox", version: "0.7.4" },
+        appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
+        protocolVersion: "2026-01-26",
+      })
+        .then((host) => {
+          document.documentElement.dataset.theme =
+            host.hostContext?.theme || "dark";
+          document.documentElement.dataset.displayMode =
+            host.hostContext?.displayMode || "inline";
+          interactive = !!host.hostCapabilities?.serverTools;
+          notify("ui/notifications/initialized");
+          if (interactive) refresh();
+          else
+            message(
+              "Interactive tools are unavailable in this host. Use the checked inbox tools in chat.",
+            );
+        })
+        .catch((error) => {
+          message(error.message);
+          $("source").textContent =
+            "Host connection unavailable; work status is unknown.";
+        });
+    </script>
+  </body>
+</html>

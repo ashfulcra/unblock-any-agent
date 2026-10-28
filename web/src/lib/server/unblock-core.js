@@ -17,13 +17,20 @@ export function canonicalRecord(event) {
   const note = canonical(event);
   return { id: stableId(note), note };
 }
+/** Exact question, answer set and unresolved effects reviewed by a human.
+ * @param {any} request */
+export function decisionSnapshot(request) {
+  return createHash('sha256').update(canonical({request_id:request.id,revisions:request.revisions.map((/** @type {any} */ r)=>r.id).sort(),answers:request.answers.map((/** @type {any} */ r)=>r.id).sort(),uncertain_actions:request.uncertain_actions.map((/** @type {any} */ r)=>r.id).sort()})).digest('hex');
+}
 /** @param {any[]} records */
 export function readEvents(records) {
   const unique = new Map();
   for (const record of records) {
     const event = JSON.parse(record.note);
     if (canonicalRecord(event).id !== record.id) throw new Error('Record integrity mismatch');
-    unique.set(record.id, { ...event, id: record.id });
+    const recorded_at=typeof record.recorded_at==='string' && Number.isFinite(Date.parse(record.recorded_at))?record.recorded_at:null;
+    const prior=unique.get(record.id)?.recorded_at;
+    unique.set(record.id, { ...event, id: record.id, recorded_at:prior && (!recorded_at || Date.parse(prior)<Date.parse(recorded_at))?prior:recorded_at });
   }
   return [...unique.values()];
 }
@@ -56,10 +63,14 @@ export function projectEvents(records) {
     if (current && answers.length && progress.length) {
       state = ['completed','resumed','acknowledged'].find(stage => progress.some((/** @type {any} */ e) => e.payload.stage === stage)) || state;
     }
+    if(current && progress.some((/** @type {any} */ e)=>e.payload.stage==='withdrawn'))state='withdrawn';
     if (uncertain_actions.length) state = 'uncertain_action';
     const delivery_history=list.filter((/** @type {any} */ e)=>e.kind==='delivery');
     const deliveries=delivery_history.filter((/** @type {any} */ e)=>current && e.payload.revision===current.id && canonical([...e.payload.answers].sort())===canonical(answerIds));
-    return { id, agent_id, revisions, history, answers, stale_answers, progress, progress_history:list.filter((/** @type {any} */ e)=>e.kind==='progress'), delivery_history, deliveries, actions:list.filter((/** @type {any} */ e)=>e.kind==='action'), settlements:list.filter((/** @type {any} */ e)=>e.kind==='settle'), uncertain_actions, state };
+    const firstDate=(/** @type {any[]} */ rows)=>rows.map(e=>e.recorded_at).filter(Boolean).sort((a,b)=>Date.parse(a)-Date.parse(b))[0] || null;
+    const roots=history.filter((/** @type {any} */ e)=>!(e.payload.parents || []).length);
+    const created_at=roots.length && roots.every((/** @type {any} */ e)=>e.recorded_at)?firstDate(roots):null;
+    return { id, agent_id, created_at,updated_at:firstDate(revisions),answered_at:firstDate(answers),completed_at:firstDate(progress.filter((/** @type {any} */ e)=>e.payload.stage==='completed')),withdrawn_at:firstDate(progress.filter((/** @type {any} */ e)=>e.payload.stage==='withdrawn')), revisions, history, answers, stale_answers, progress, progress_history:list.filter((/** @type {any} */ e)=>e.kind==='progress'), delivery_history, deliveries, actions:list.filter((/** @type {any} */ e)=>e.kind==='action'), settlements:list.filter((/** @type {any} */ e)=>e.kind==='settle'), uncertain_actions, state };
   });
 }
 /** @param {any} grant @param {string} key */
