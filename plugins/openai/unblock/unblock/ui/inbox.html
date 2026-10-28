@@ -906,6 +906,33 @@
             300,
             rec,
           );
+          if (
+            row.revisions.length === 1 &&
+            detail.can_answer &&
+            !["completed", "withdrawn"].includes(row.state) &&
+            q.payload.recommendation.trim()
+          ) {
+            const snapshot = detail.reviewed_snapshot;
+            const recommend = el("button", "Send recommendation", "primary");
+            recommend.disabled = busy || !ready || !interactive || !!currentIntent();
+            recommend.onclick = () => {
+              if (
+                busy || !ready || !interactive || currentIntent() ||
+                selected !== row.id || detail.request !== row ||
+                detail.reviewed_snapshot !== snapshot || !detail.can_answer
+              ) return;
+              const draft = {
+                request_id: row.id,
+                revision: q.id,
+                reviewed_snapshot: snapshot,
+                answer: q.payload.recommendation,
+              };
+              drafts.set(row.id, draft);
+              save("draft", row.id, draft);
+              return sendDecision();
+            };
+            rec.append(recommend);
+          }
           panel.append(rec);
           const next = el("details");
           next.append(
@@ -1368,7 +1395,7 @@
         if (interactive && !busy) refresh();
       }, 15000);
       rpc("ui/initialize", {
-        appInfo: { name: "unblock-inbox", version: "0.7.1" },
+        appInfo: { name: "unblock-inbox", version: "0.7.4" },
         appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
         protocolVersion: "2026-01-26",
       })

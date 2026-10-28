@@ -208,6 +208,28 @@
       busy = false;
     }
   }
+  /** @param {any} row */
+  async function sendRecommendation(row) {
+    if (
+      busy ||
+      !checked ||
+      error ||
+      !row ||
+      row.revisions.length !== 1 ||
+      ['completed', 'withdrawn'].includes(row.state) ||
+      requests.find((current) => current.id === row.id) !== row ||
+      Object.values(pending).some(
+        (p) => p.request_id === row.id && p.revision === row.revisions[0].id
+      )
+    )
+      return;
+    const revision = row.revisions[0];
+    if (!revision.payload.recommendation.trim()) return;
+    drafts[row.id] = editDraft(null, row.id, revision.id, revision.payload.recommendation);
+    answers[row.id] = drafts[row.id].answer;
+    sessionStorage.setItem('unblock-draft:' + row.id, JSON.stringify(drafts[row.id]));
+    await answer(row);
+  }
   /** @param {any} row @param {any} [saved] */
   async function answer(row, saved = null) {
     const revision = row.revisions[0];
@@ -598,6 +620,7 @@
             onedit={editAnswer}
             onreview={reviewAnswer}
             onsend={() => answer(selected)}
+            onrecommend={() => sendRecommendation(selected)}
             onclose={() => (selectedId = '')}
           />{/if}
       </div>

@@ -133,3 +133,8 @@ The dashboard correction is deployed with board, list and agent ownership map. T
 Ash: “when you work through the stuff i just responded - i need to see this work with multiple agents on multiple platforms”.
 
 Acceptance must visibly show distinct actual agents on different platforms in the same decision workspace. Each agent raises its own scoped request, receives the human's actual answer, performs its next authorized step and reports source-backed resumed/completed work with an artifact. Include delayed pickup after a worker becomes idle, neighboring-agent isolation, repeated delivery and interruption recovery. Record actual platform and machine coverage separately. Codex does not establish ChatGPT web or Claude support, and an installed skill, tool discovery or saved answer does not establish worker continuation. Keep the complete ChatGPT route incomplete until its own host evidence exists. The execution checklist is in [the visible acceptance plan](superpowers/plans/2026-10-23-visible-multi-platform-acceptance.md).
+
+## One-click recommendation (2026-10-28)
+
+Ash: “i should be able to just hit a button to send the reccomendatin”.
+Place Send recommendation beside the agent’s recommendation in the inline inbox and hosted dashboard. One click submits its full text using the existing reviewed-question and answer-intent safeguards. Preserve manual answers, changed-question review and exact retries of uncertain saves.

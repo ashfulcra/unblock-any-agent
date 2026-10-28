@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { requestView, waitingAge, excerpt, progressView } from '$lib/unblock-view.js';
-  /** @type {{row:any,name:string,answerText:string,draft:any,pending:any,earlierPending:any[],onverify:(body:any)=>void,busy:boolean,sourceReady:boolean,now:number,onedit:(value:string)=>void,onreview:()=>void,onsend:()=>void,onclose:()=>void}} */
+  /** @type {{row:any,name:string,answerText:string,draft:any,pending:any,earlierPending:any[],onverify:(body:any)=>void,busy:boolean,sourceReady:boolean,now:number,onedit:(value:string)=>void,onreview:()=>void,onsend:()=>void,onrecommend:()=>void,onclose:()=>void}} */
   let {
     row,
     name,
@@ -16,6 +16,7 @@
     onedit,
     onreview,
     onsend,
+    onrecommend,
     onclose
   } = $props();
   const view = $derived(requestView(row));
@@ -91,6 +92,13 @@
             <summary>Read full recommendation</summary>
             <p>{revision.payload.recommendation}</p>
           </details>{/if}
+        {#if row.revisions.length === 1 && view.lane !== 'done' && revision.payload.recommendation.trim()}
+          <button
+            class="primary-button"
+            disabled={busy || !sourceReady || !!pending}
+            onclick={onrecommend}>Send recommendation<span aria-hidden="true">↗</span></button
+          >
+        {/if}
       </section>
       <details class="detail-section">
         <summary>What happens next</summary>

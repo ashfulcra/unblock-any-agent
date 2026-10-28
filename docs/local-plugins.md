@@ -37,7 +37,7 @@ Actual Claude host check: Claude Code loaded the complete version0.3.0 export us
 
 ## Published source candidates
 
-The canonical repository includes complete generated [Claude](../plugins/claude/unblock) and [portable OpenAI](../plugins/openai/unblock) version 0.7.2 directories, published by Fulcra Dynamics with Apache-2.0 and retained upstream notices. They require no build to obtain their runtime or skill files. CI rebuilds both from canonical source and rejects any content or file-tree drift. Keep worker profiles, tokens and listener ledgers outside these directories.
+The canonical repository includes complete generated [Claude](../plugins/claude/unblock) and [portable OpenAI](../plugins/openai/unblock) version 0.7.4 directories, published by Fulcra Dynamics with Apache-2.0 and retained upstream notices. They require no build to obtain their runtime or skill files. CI rebuilds both from canonical source and rejects any content or file-tree drift. Keep worker profiles, tokens and listener ledgers outside these directories.
 
 The Claude directory provides the immutable GitHub commit/subdirectory shape required for directory review and supports the temporary `--plugin-dir` loading flow above. The portable directory uses local stdio; it does not provide ChatGPT web OAuth or events. These are public development sources, not accepted official listings or submission-ready packages: publisher-account verification and the remaining platform requirements still apply. See [candidate maintenance](../plugins/README.md).
 

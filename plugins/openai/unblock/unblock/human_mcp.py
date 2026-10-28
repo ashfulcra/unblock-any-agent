@@ -13,7 +13,7 @@ from mcp.types import CallToolResult,TextContent,ToolAnnotations
 from .human_inbox import HumanInbox
 from .store import DomainError
 
-UI_URI='ui://unblock/human-inbox/v0.7.1'
+UI_URI='ui://unblock/human-inbox/v0.7.4'
 
 
 def age(value):
@@ -28,7 +28,7 @@ def age(value):
 
 def build_server(config,*,client=None):
     inbox=client or HumanInbox.from_file(config)
-    server=MCPServer('unblock-inbox',version='0.7.1',instructions='Human decision inbox and declared agent work. Show actual agent identity, original waiting time, concise decision, concrete work evidence, next action and expected update. Missed work updates need investigation; they do not imply a human decision. Read the full decision before saving only the human’s actual answer. Exact reviewed snapshots prevent silently applying a decision to changed questions. Preserve pending answer intents and retry them unchanged. A saved answer never proves worker pickup. This explicit owner connection is separate from worker grants; it cannot enroll, renew or execute agent work.',log_level='ERROR')
+    server=MCPServer('unblock-inbox',version='0.7.4',instructions='Human decision inbox and declared agent work. Show actual agent identity, original waiting time, concise decision, concrete work evidence, next action and expected update. Missed work updates need investigation; they do not imply a human decision. Read the full decision before saving only the human’s actual answer. Exact reviewed snapshots prevent silently applying a decision to changed questions. Preserve pending answer intents and retry them unchanged. A saved answer never proves worker pickup. This explicit owner connection is separate from worker grants; it cannot enroll, renew or execute agent work.',log_level='ERROR')
     read=ToolAnnotations(read_only_hint=True,destructive_hint=False,open_world_hint=False)
     write=ToolAnnotations(read_only_hint=False,destructive_hint=False,open_world_hint=False)
 

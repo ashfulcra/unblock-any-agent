@@ -527,3 +527,66 @@ test('fullscreen host changes apply without losing the current theme', () => {
   });
   assert.equal(h.context.document.documentElement.dataset.displayMode, 'inline');
 });
+
+const recommendationButton = (h) =>
+  h.nodes
+    .get('detail')
+    .querySelectorAll('button')
+    .find((b) => b.textContent === 'Send recommendation');
+test('one recommendation click sends the full reviewed recommendation, retaining its intent across uncertainty', async () => {
+  const h = harness();
+  prepare(h);
+  const full = 'Use the bounded test target. '.repeat(25);
+  h.set('recommendationInput', full);
+  h.run(
+    'rowInput={...rowInput,revisions:[{...rowInput.revisions[0],payload:{...rowInput.revisions[0].payload,recommendation:recommendationInput}}]};detail.request=rowInput;renderDetail();tool=async(name,args)=>{captured={...args};return {visibility:"pending",reason:"Readback pending"}}'
+  );
+  const button = recommendationButton(h);
+  assert.ok(button, 'recommendation has a direct send action');
+  await button.onclick();
+  assert.equal(h.context.captured.answer, full);
+  assert.equal(h.context.captured.revision, 'new-revision');
+  assert.equal(h.context.captured.reviewed_snapshot, 'new-snapshot');
+  assert.equal(h.run('pending.get("old:intent").answer'), old.answer);
+  const first = JSON.stringify(h.context.captured);
+  await h.run('sendDecision()');
+  assert.equal(JSON.stringify(h.context.captured), first);
+  assert.equal(recommendationButton(h).disabled, true);
+});
+test('recommendation cannot replace a current uncertain answer or submit from stale or unavailable details', async () => {
+  const h = harness();
+  prepare(h);
+  h.run('renderDetail();tool=async(name,args)=>{captured=args;return {visibility:"pending"}}');
+  const stale = recommendationButton(h);
+  assert.ok(stale);
+  h.run('detail={...detail,reviewed_snapshot:"changed-snapshot"}');
+  await stale.onclick();
+  assert.equal(h.context.captured, undefined);
+  h.run('renderDetail();ready=false;renderDetail()');
+  assert.equal(recommendationButton(h).disabled, true);
+  h.run(
+    'ready=true;pending.set("current",{...freshInput,intent_id:"current",answer:"Keep this exact answer",reviewed_snapshot:"changed-snapshot"});renderDetail()'
+  );
+  assert.equal(recommendationButton(h).disabled, true);
+  await recommendationButton(h).onclick();
+  assert.equal(h.context.captured, undefined);
+  assert.equal(h.run('pending.get("current").answer'), 'Keep this exact answer');
+});
+test('no recommendation shortcut is offered for blank, completed or conflicting questions', () => {
+  for (const extra of [
+    { state: 'completed' },
+    { revisions: [] },
+    { revisions: [row.revisions[0], row.revisions[0]] },
+    {
+      revisions: [
+        { ...row.revisions[0], payload: { ...row.revisions[0].payload, recommendation: '  ' } }
+      ]
+    }
+  ]) {
+    const h = harness();
+    prepare(h);
+    h.set('extra', extra);
+    h.run('detail.request={...rowInput,...extra};renderDetail()');
+    assert.equal(recommendationButton(h), undefined);
+  }
+});
