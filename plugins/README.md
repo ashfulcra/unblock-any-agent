@@ -4,8 +4,8 @@ Canonical skills, product source, issues, contributions and stars: [ashfulcra/un
 
 | Source path | Use | Current status |
 | --- | --- | --- |
-| [claude/unblock](claude/unblock) | Complete Claude Code plugin directory; a GitHub commit and this subdirectory can be reviewed by the official directory. | Development candidate, version 0.4.0. |
-| [openai/unblock](openai/unblock) | Complete portable Agent Plugins directory with local stdio MCP. | Development candidate, version 0.4.0; desktop-only submission needs the documented partner route. |
+| [claude/unblock](claude/unblock) | Complete Claude Code plugin directory; a GitHub commit and this subdirectory can be reviewed by the official directory. | Development candidate, version 0.7.5. |
+| [openai/unblock](openai/unblock) | Complete portable Agent Plugins directory with local stdio MCP. | Development candidate, version 0.7.5; desktop-only submission needs the documented partner route. |
 
 Each directory is self-contained and generated from the canonical runtime and `skills/unblock`. Do not edit generated files. From the repository root, build to a new private output directory with `python3 scripts/build_plugins.py --out <fresh-directory>`, then replace the corresponding candidate trees with those exact outputs. CI rebuilds and compares every file, so changes to canonical runtime or skills must regenerate both candidates.
 
@@ -14,3 +14,5 @@ For Claude Code 2.1.275 or later, the source-catalog install command is `/plugin
 For temporary Claude Code loading from a clone, set `UNBLOCK_AGENT_CONFIG` to your existing private enrolled worker profile outside this repository, then run `claude --plugin-dir /absolute/path/to/unblock-any-agent/plugins/claude/unblock`. Use `/unblock:unblock`; the package does not reserve bare `/unblock`. See [setup and actual host evidence](../docs/local-plugins.md) and the contained setup reference.
 
 The approved public publisher is Fulcra Dynamics; original project contributions use Apache-2.0. Generated packages include LICENSE and THIRD_PARTY_NOTICES. Source publication does not verify the publisher account, reserve a namespace, install a persistent listener or establish an official listing. Actual portal checks remain required. The portable local package is not a ChatGPT web connection; remote authorization and event pickup remain separate work. See [official release plan](../docs/marketplace-release-plan.md).
+
+See the [current submission-preparation checklist](../docs/submission-readiness.md) for packaged assets/review drafts and the remaining publisher/host prerequisites. Local preparation does not wait for portal access.

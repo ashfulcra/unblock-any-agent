@@ -5,7 +5,7 @@ from pathlib import Path
 import shutil
 
 SOURCE=Path(__file__).resolve().parents[1]
-VERSION='0.7.4'
+VERSION='0.7.5'
 REPOSITORY='https://github.com/ashfulcra/unblock-any-agent'
 RUNTIME=('__init__.py','__main__.py','client.py','server.py','store.py','listener.py','claude_route.py','mcp_bridge.py','native_client.py','native_mcp.py','native_listener.py','native_worker.py','native_monitor.py','human_inbox.py','human_mcp.py')
 SKILL=('SKILL.md','references/setup.md','references/human-inbox.md')
@@ -16,11 +16,16 @@ def write_json(path,value):
     path.write_text(json.dumps(value,indent=2)+'\n')
 
 
-def copy(relative,destination):
+def source_file(relative):
     source=SOURCE/relative
     if source.is_symlink() or any(parent.is_symlink() for parent in source.parents if parent!=SOURCE.parent) or not source.is_file():
         raise ValueError('Export sources must be contained regular files')
     if not source.resolve().is_relative_to(SOURCE):raise ValueError('Source escapes repository')
+    return source
+
+
+def copy(relative,destination):
+    source=source_file(relative)
     destination.parent.mkdir(parents=True,exist_ok=True)
     shutil.copyfile(source,destination)
 
@@ -33,6 +38,7 @@ def build(output):
     for platform,root in exports.items():
         root.mkdir(parents=True)
         for name in ('LICENSE','THIRD_PARTY_NOTICES'):copy(Path(name),root/name)
+        copy(Path('assets/unblock-icon.png'),root/'assets/unblock-icon.png')
         for name in RUNTIME:copy(Path('unblock')/name,root/'unblock'/name)
         for name in ('index.html','app.js','style.css'):copy(Path('unblock/static')/name,root/'unblock/static'/name)
         for name in SKILL:copy(Path('skills/unblock')/name,root/'skills/unblock'/name)
@@ -48,7 +54,13 @@ def build(output):
             write_json(root/'.mcp.json',{'mcpServers':{'unblock':server}})
         else:
             manifest['$schema']='https://agent-plugins.org/schemas/1.0.0/plugin.schema.json'
-            manifest['extensions']={'com.openai':{'interface':{'displayName':'Unblock Any Agent','shortDescription':'Help agents keep moving','longDescription':'Local development tools for human decisions, continuity recovery, and verified agent progress. Connects an enrolled Fulcra-native pilot or loopback proof profile and a separately configured environment listener. An optional separate human inbox offers an interactive decision view.','developerName':'Fulcra Dynamics','category':'Productivity','capabilities':['Interactive']}}}
+            manifest['extensions']={'com.openai':{
+                'interface':{'displayName':'Unblock Any Agent','shortDescription':'Help agents keep moving','longDescription':'Local development tools for human decisions, continuity recovery, and verified agent progress. Connects an enrolled Fulcra-native pilot or loopback proof profile and a separately configured environment listener. An optional separate human inbox offers an interactive decision view.','developerName':'Fulcra Dynamics','category':'Productivity','capabilities':['Interactive'],
+                    'logo':'./assets/unblock-icon.png','composerIcon':'./assets/unblock-icon.png',
+                    'websiteURL':REPOSITORY,'supportURL':REPOSITORY+'/issues',
+                    'defaultPrompt':['Recover my pending work and show the next safe step.','Help me ask a clear question that will unblock this task.','Verify whether my agent continued after my answer.']},
+                'review':json.loads(source_file(Path('packaging/openai-review.json')).read_text()),
+                'publication':{'release_notes':'Prepare contained listing/composer icons, starter prompts and draft review cases. Worker tools, credential boundaries and listener requirements are unchanged.'}}}
             write_json(root/'plugin.json',manifest)
             write_json(root/'mcp.json',{'$schema':'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json','mcpServers':{'unblock':{'type':'stdio',**server}}})
         (root/'README.md').write_text(f'''# Unblock Any Agent — local development package

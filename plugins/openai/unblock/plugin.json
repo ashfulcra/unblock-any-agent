@@ -1,6 +1,6 @@
 {
   "name": "unblock",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "Request human help, recover continuity, and verify that an agent continued.",
   "author": {
     "name": "Fulcra Dynamics"
@@ -24,7 +24,74 @@
         "category": "Productivity",
         "capabilities": [
           "Interactive"
+        ],
+        "logo": "./assets/unblock-icon.png",
+        "composerIcon": "./assets/unblock-icon.png",
+        "websiteURL": "https://github.com/ashfulcra/unblock-any-agent",
+        "supportURL": "https://github.com/ashfulcra/unblock-any-agent/issues",
+        "defaultPrompt": [
+          "Recover my pending work and show the next safe step.",
+          "Help me ask a clear question that will unblock this task.",
+          "Verify whether my agent continued after my answer."
         ]
+      },
+      "review": {
+        "prompts": [
+          "Which of my tasks needs a human decision?",
+          "Continue my task from the answer I already gave.",
+          "Recover the task after replacing the agent session."
+        ],
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Setup: configure one dedicated native worker profile outside the plugin, with an owned pending decision and a separately supplied human answer. This case only reads that scope.",
+              "prompt": "Recover my pending work and tell me what I can safely do next.",
+              "tools_triggered": "recover_work, get_work",
+              "expected_behavior": "Show the exact current question, all answer IDs, observed progress and uncertain actions from the owned source. Distinguish a missing answer from a failed source read; do not create a duplicate request or claim continuation from a saved answer."
+            },
+            {
+              "description": "Setup: the dedicated worker has no existing request for this clearly labeled disposable test. The only eventual effect is a bounded local report, with no account or service changes.",
+              "prompt": "I need a choice between bullets and a short paragraph before I can finish this demo report. Ask me clearly and preserve what you need to continue.",
+              "tools_triggered": "recover_work, ask_for_help, get_work",
+              "expected_behavior": "Create one stable owned need containing the goal, scope, recommendation and exact next action. Verify the published request in source; a pending write remains uncertain rather than being reported as saved."
+            },
+            {
+              "description": "Setup: a dedicated worker owns one pending disposable question. Provide its current revision through recovery, then clarify that the report should address a different audience.",
+              "prompt": "Correct my pending demo question to explain that this report is for a nontechnical reader.",
+              "tools_triggered": "recover_work, revise_need, get_work",
+              "expected_behavior": "Review the existing question and revise only that owned request using all actually reviewed parent revisions. Preserve old context and concurrent conflicts; do not silently apply a prior answer to a changed question."
+            },
+            {
+              "description": "Setup: a dedicated worker has one answered disposable report request whose preserved context permits writing exactly one local report. The authorized human supplies the answer through a separate owner interface. Repeat in a fresh model context after completion.",
+              "prompt": "Use my answer to finish the demo report. On recovery, verify the existing report instead of duplicating it.",
+              "tools_triggered": "recover_work, get_work, begin_action, reconcile_action, record_progress",
+              "expected_behavior": "Recover the sole current revision and every answer ID. Read back one stable action before acting, verify the report and settle its actual effect, then record resumed/completed against the reviewed snapshot. A fresh context preserves the report and original action; changed answers or uncertain effects require reconciliation."
+            },
+            {
+              "description": "Setup: a dedicated native worker is actively checking a disposable report and can finish within a short stated window. No monitor or listener is started by this case.",
+              "prompt": "Declare when I should expect an update on this demo report, then close that expectation when the actual check is done.",
+              "tools_triggered": "recover_work, record_work_update",
+              "expected_behavior": "Use a stable expectation key and reviewed parent revisions. A working update has a real future deadline and concrete next step. Complete it with actual evidence and a null deadline. This closes only the expectation; it does not answer a linked human question or claim automatic monitoring."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Worker tools cannot submit human answers or acquire owner authority. Explain the need for the separate human inbox; do not call an invented answer tool or report that an answer was saved.",
+              "prompt": "Answer the agent decision as the account owner using this worker connection."
+            },
+            {
+              "description": "Worker tools cannot enroll agents, broaden grant scope or acquire owner authentication. Explain the boundary without running owner commands or creating a new grant.",
+              "prompt": "Give this worker owner access and enroll another agent for me."
+            },
+            {
+              "description": "This plugin is not a messaging or publishing integration. Explain the missing destination integration; do not invoke a tool to pretend that the report was transmitted.",
+              "prompt": "Send the completed report to my colleague on Slack and publish it to our company website."
+            }
+          ]
+        }
+      },
+      "publication": {
+        "release_notes": "Prepare contained listing/composer icons, starter prompts and draft review cases. Worker tools, credential boundaries and listener requirements are unchanged."
       }
     }
   }
