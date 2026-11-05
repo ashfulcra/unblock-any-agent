@@ -17,6 +17,8 @@ Start with [`web/`](../web/README.md) in your fork. Use the current [Fulcra web-
 
 The deploying agent follows the Fulcra skill with the user's current CLI sign-in. Reuse that user's saved workspace, harness annotation and deploy project; create them through the skill only when absent. Create a distinct product `MomentAnnotation` for Unblock records. The skill's `fulcra-api data-type create MomentAnnotation "..."` command and deploy-project API return the actual identifiers. Preserve uncertain creation results and reconcile them before retrying. The agent handles those identifiers; the user need not find bucket names or edit configuration by hand.
 
+Use the latest patch release of Node.js 22 or 24 for local installation and builds. Keep the web package's `engines.node` setting: it selects an adapter-supported runtime for managed deployments, including projects whose default is Node 26. Do not remove the range when updating your fork.
+
 From the repository root, prepare configuration using the actual identifiers returned for that user:
 
 ```sh
