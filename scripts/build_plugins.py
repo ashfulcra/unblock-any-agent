@@ -5,7 +5,7 @@ from pathlib import Path
 import shutil
 
 SOURCE=Path(__file__).resolve().parents[1]
-VERSION='0.7.6'
+VERSION='0.7.7'
 REPOSITORY='https://github.com/ashfulcra/unblock-any-agent'
 RUNTIME=('__init__.py','__main__.py','client.py','server.py','store.py','listener.py','claude_route.py','mcp_bridge.py','native_client.py','native_mcp.py','native_listener.py','native_worker.py','native_monitor.py','human_inbox.py','human_mcp.py')
 SKILL=('SKILL.md','references/setup.md','references/human-inbox.md')
@@ -61,7 +61,7 @@ def build(output):
                     'websiteURL':REPOSITORY,'supportURL':REPOSITORY+'/issues',
                     'defaultPrompt':['Recover my pending work and show the next safe step.','Help me ask a clear question that will unblock this task.','Verify whether my agent continued after my answer.']},
                 'review':json.loads(source_file(Path('packaging/openai-review.json')).read_text()),
-                'publication':{'release_notes':'Reject malformed agent profile shape before MCP startup or Claude route dispatch while preserving generic private JSON artifacts. Includes contained listing/composer icons and draft review cases. Worker authority and listener requirements are unchanged.'}}}
+                'publication':{'release_notes':'Reject malformed agent and human profile shape before MCP startup, journal access or Claude route dispatch while preserving generic private JSON artifacts. Includes contained listing/composer icons and draft review cases. Worker authority and listener requirements are unchanged.'}}}
             write_json(root/'plugin.json',manifest)
             write_json(root/'mcp.json',{'$schema':'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json','mcpServers':{'unblock':{'type':'stdio',**server}}})
         (root/'README.md').write_text(f'''# Unblock Any Agent — local development package

@@ -4,8 +4,8 @@ Canonical skills, product source, issues, contributions and stars: [ashfulcra/un
 
 | Source path | Use | Current status |
 | --- | --- | --- |
-| [claude/unblock](claude/unblock) | Complete Claude Code plugin directory; a GitHub commit and this subdirectory can be reviewed by the official directory. | Development candidate, version 0.7.6. |
-| [openai/unblock](openai/unblock) | Complete portable Agent Plugins directory with local stdio MCP. | Development candidate, version 0.7.6; desktop-only submission needs the documented partner route. |
+| [claude/unblock](claude/unblock) | Complete Claude Code plugin directory; a GitHub commit and this subdirectory can be reviewed by the official directory. | Development candidate, version 0.7.7. |
+| [openai/unblock](openai/unblock) | Complete portable Agent Plugins directory with local stdio MCP. | Development candidate, version 0.7.7; desktop-only submission needs the documented partner route. |
 
 Each directory is self-contained and generated from the canonical runtime and `skills/unblock`. Do not edit generated files. From the repository root, build to a new private output directory with `python3 scripts/build_plugins.py --out <fresh-directory>`, then replace the corresponding candidate trees with those exact outputs. CI rebuilds and compares every file, so changes to canonical runtime or skills must regenerate both candidates.
 

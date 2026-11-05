@@ -127,7 +127,8 @@ class HumanInbox:
     def from_file(cls,path):
         if not Path(path).is_absolute():raise ValueError('Explicit private human profile required')
         p=private_read(path)
-        if p.get('transport')!='fulcra-human' or set(p)!={'transport','project_id','owner_id','state_path'}:raise ValueError('Human profile contains only its approved project, owner and private journal path')
+        if not isinstance(p,dict) or p.get('transport')!='fulcra-human' or set(p)!={'transport','project_id','owner_id','state_path'}:raise ValueError('Human profile contains only its approved project, owner and private journal path')
+        if not isinstance(p['state_path'],str):raise ValueError('Human journal path must be a string')
         return cls(p['project_id'],p['owner_id'],p['state_path'])
 
     @contextmanager

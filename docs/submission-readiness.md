@@ -1,6 +1,6 @@
 # Public submission preparation
 
-This checklist describes the 0.7.6 source candidate. It is not an uploaded draft,
+This checklist describes the 0.7.7 source candidate. It is not an uploaded draft,
 review approval, public release, or installed private-plugin update.
 
 ## Prepared in the package
@@ -31,14 +31,18 @@ The previous 0.7.5 candidate was actually installed from both a local catalog an
 the public GitHub candidate branch in empty isolated Claude Code 2.1.312 configs.
 List/details, duplicate install, disable/enable, same-version update and removal
 were checked. The remote clone matched the expected commit and all 31 copied
-plugin files matched the candidate bytes. Both registrations were removed.
+plugin files matched the candidate bytes. All registrations were removed.
+Candidate 0.7.6 was also installed from its public GitHub source branch in a fresh
+configuration, byte-checked and removed.
 This is CLI installation evidence, not model tool-use or an official listing.
 
 That testing found a malformed-profile startup traceback. Candidate 0.7.6 returns
 the existing structured MCP setup error for non-object profiles and non-string
 URL/token fields. The local/native clients and Claude route reject these profiles
 before network access or worker launch. Generic private JSON artifacts retain
-their original behavior. The original failing
+their original behavior. Candidate 0.7.7 additionally rejects non-object human
+profiles and non-string journal paths before account or journal access, preserving
+the exact human-only schema and owner/project binding. The original failing
 probe and the default official-marketplace cache hash change remain retained;
 full global configuration preservation is not certified.
 
