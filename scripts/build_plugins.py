@@ -50,6 +50,7 @@ def build(output):
         server={'command':'uv','args':['run','--no-project','--with','mcp==2.3.0','python',('${CLAUDE_PLUGIN_ROOT}' if platform=='claude' else '${PLUGIN_ROOT}')+'/scripts/run_mcp.py']}
         if platform=='claude':
             manifest['displayName']='Unblock Any Agent'
+            manifest['icon']='./assets/unblock-icon.png'
             write_json(root/'.claude-plugin/plugin.json',manifest)
             write_json(root/'.mcp.json',{'mcpServers':{'unblock':server}})
         else:

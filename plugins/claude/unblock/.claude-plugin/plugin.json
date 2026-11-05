@@ -13,5 +13,6 @@
     "continuity",
     "human-in-the-loop"
   ],
-  "displayName": "Unblock Any Agent"
+  "displayName": "Unblock Any Agent",
+  "icon": "./assets/unblock-icon.png"
 }
