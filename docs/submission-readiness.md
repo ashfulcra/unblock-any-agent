@@ -34,9 +34,11 @@ were checked. The remote clone matched the expected commit and all 31 copied
 plugin files matched the candidate bytes. Both registrations were removed.
 This is CLI installation evidence, not model tool-use or an official listing.
 
-That testing found a malformed-profile startup traceback. Candidate 0.7.6 rejects
-non-object agent profiles with the existing structured setup error, while generic
-private JSON artifacts retain their original behavior. The original failing
+That testing found a malformed-profile startup traceback. Candidate 0.7.6 returns
+the existing structured MCP setup error for non-object profiles and non-string
+URL/token fields. The local/native clients and Claude route reject these profiles
+before network access or worker launch. Generic private JSON artifacts retain
+their original behavior. The original failing
 probe and the default official-marketplace cache hash change remain retained;
 full global configuration preservation is not certified.
 

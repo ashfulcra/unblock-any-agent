@@ -43,6 +43,8 @@ def read_agent_profile(path):
     profile=private_read(path)
     if not isinstance(profile,dict):
         raise ValueError('Agent config must be a JSON object')
+    if not all(isinstance(profile.get(field),str) for field in ('url','token')):
+        raise ValueError('Agent config requires string url and token fields')
     return profile
 
 

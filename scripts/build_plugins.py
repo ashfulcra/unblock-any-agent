@@ -61,7 +61,7 @@ def build(output):
                     'websiteURL':REPOSITORY,'supportURL':REPOSITORY+'/issues',
                     'defaultPrompt':['Recover my pending work and show the next safe step.','Help me ask a clear question that will unblock this task.','Verify whether my agent continued after my answer.']},
                 'review':json.loads(source_file(Path('packaging/openai-review.json')).read_text()),
-                'publication':{'release_notes':'Reject non-object agent profiles with a structured setup error while preserving generic private JSON artifacts. Includes contained listing/composer icons and draft review cases. Worker authority and listener requirements are unchanged.'}}}
+                'publication':{'release_notes':'Reject malformed agent profile shape before MCP startup or Claude route dispatch while preserving generic private JSON artifacts. Includes contained listing/composer icons and draft review cases. Worker authority and listener requirements are unchanged.'}}}
             write_json(root/'plugin.json',manifest)
             write_json(root/'mcp.json',{'$schema':'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json','mcpServers':{'unblock':{'type':'stdio',**server}}})
         (root/'README.md').write_text(f'''# Unblock Any Agent — local development package

@@ -91,7 +91,7 @@
         }
       },
       "publication": {
-        "release_notes": "Reject non-object agent profiles with a structured setup error while preserving generic private JSON artifacts. Includes contained listing/composer icons and draft review cases. Worker authority and listener requirements are unchanged."
+        "release_notes": "Reject malformed agent profile shape before MCP startup or Claude route dispatch while preserving generic private JSON artifacts. Includes contained listing/composer icons and draft review cases. Worker authority and listener requirements are unchanged."
       }
     }
   }
