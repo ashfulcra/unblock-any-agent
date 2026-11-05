@@ -1,6 +1,6 @@
 # Public submission preparation
 
-This checklist describes the 0.7.5 source candidate. It is not an uploaded draft,
+This checklist describes the 0.7.6 source candidate. It is not an uploaded draft,
 review approval, public release, or installed private-plugin update.
 
 ## Prepared in the package
@@ -24,6 +24,21 @@ worker and a separately authorized human interface. They describe supported
 behavior; they are **not recorded host-review results**. Source regression tests
 cover request/revision/action/expectation boundaries, while an actual review run
 must retain its own tool and outcome evidence.
+
+## Local CLI verification
+
+The previous 0.7.5 candidate was actually installed from both a local catalog and
+the public GitHub candidate branch in empty isolated Claude Code 2.1.312 configs.
+List/details, duplicate install, disable/enable, same-version update and removal
+were checked. The remote clone matched the expected commit and all 31 copied
+plugin files matched the candidate bytes. Both registrations were removed.
+This is CLI installation evidence, not model tool-use or an official listing.
+
+That testing found a malformed-profile startup traceback. Candidate 0.7.6 rejects
+non-object agent profiles with the existing structured setup error, while generic
+private JSON artifacts retain their original behavior. The original failing
+probe and the default official-marketplace cache hash change remain retained;
+full global configuration preservation is not certified.
 
 ## Remaining preparation and online checks
 

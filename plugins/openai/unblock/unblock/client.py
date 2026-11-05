@@ -39,6 +39,13 @@ def private_read(path):
     return json.loads(path.read_text())
 
 
+def read_agent_profile(path):
+    profile=private_read(path)
+    if not isinstance(profile,dict):
+        raise ValueError('Agent config must be a JSON object')
+    return profile
+
+
 class Client:
     def __init__(self,url,token):
         parsed=urlsplit(url)
@@ -48,7 +55,7 @@ class Client:
 
     @classmethod
     def from_file(cls,path):
-        cfg=private_read(path)
+        cfg=read_agent_profile(path)
         return cls(cfg['url'],cfg['token'])
 
     def call(self,method,path,data=None):
