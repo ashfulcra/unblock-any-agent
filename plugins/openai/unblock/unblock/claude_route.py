@@ -13,7 +13,7 @@ import subprocess
 import sys
 import uuid
 
-from .client import private_read
+from .client import read_agent_profile
 from .store import DomainError
 
 
@@ -40,7 +40,7 @@ def main():
     args=parser.parse_args()
     try:
         payload=json.load(sys.stdin)
-        cfg=private_read(args.config)
+        cfg=read_agent_profile(args.config)
         if cfg.get('transport')=='fulcra-native':
             from .native_client import NativeClient
             identity=NativeClient.from_file(args.config).call('identity')

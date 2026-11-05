@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-from .client import private_read
+from .client import read_agent_profile
 from .store import DomainError
 
 READ=('identity','enrollment','attention','recover')
@@ -27,7 +27,7 @@ class NativeClient:
 
     @classmethod
     def from_file(cls,path):
-        cfg=private_read(path)
+        cfg=read_agent_profile(path)
         if cfg.get('transport')!='fulcra-native':raise ValueError('Expected fulcra-native profile')
         return cls(cfg['url'],cfg['token'])
 
