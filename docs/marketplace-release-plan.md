@@ -78,3 +78,7 @@ Use the current [Claude pre-submission checklist](https://claude.com/docs/plugin
 ## Local MCP submission route verified 2026-10-16
 
 OpenAI also documents desktop-only packages containing a local stdio MCP server. Submission requires partner approval and organization allowlisting through an OpenAI representative; the portal then uses its Skills only upload flow, including local MCP configuration. A clean desktop install and the standard publisher requirements still apply. This is distinct from a skills-only public package that later adds remote MCP. Our current portable export is a local development package and does not establish access to this route. For ChatGPT web, retain the remote HTTPS/OAuth plan. [Desktop-only submission](https://developers.openai.com/plugins/deploy/desktop-only)
+
+## November 5 preparation checkpoint
+
+The 0.7.5 source candidate adds contained listing/composer icons, verified public product/support links, starter prompts, release notes and eight draft reviewer cases. [Submission readiness](submission-readiness.md) separates completed local package work from unverified policy URLs, publication choices, recording/reviewer access, account eligibility and online review. The candidate retains its actual local stdio MCP; no remote endpoint, legal declaration, public listing or installed private update is inferred. Portal access must not block independent local preparation.
