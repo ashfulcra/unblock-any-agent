@@ -25,7 +25,7 @@ npm run check
 npm run build
 ```
 
-Type check currently reports zero errors and two existing template `on:click` deprecation warnings. A compatible lockfile update removed the inherited high/moderate audit advisories; four low cookie advisories remain inherited through SvelteKit 2, whose offered fix requires a major framework update. The app uses constant cookie names/path/domain; that upgrade is tracked separately from the baseline.
+Type check currently reports zero errors and two existing template `on:click` deprecation warnings. Run `npm audit` against the installed lockfile to check current advisories. The compatible Vite and Vitest patches remove the high/moderate advisories observed during this update. Low-severity findings remain in SvelteKit and its dependency chain, including cookie and deepmerge. The offered full fix requires a major framework update and is tracked separately.
 
 ## Deployment and evaluation
 
