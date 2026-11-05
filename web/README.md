@@ -8,6 +8,8 @@ Based on the official [Fulcra Svelte template](https://github.com/fulcradynamics
 
 ## Local setup
 
+Use the latest patch release of Node.js 22 or 24. The package engine range also makes managed deployments select a supported runtime when a new project defaults to a newer major version. The current Svelte deployment adapter rejects Node 26.
+
 ```sh
 npm ci
 cp .env.example .env
