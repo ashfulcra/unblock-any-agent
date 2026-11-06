@@ -1,7 +1,6 @@
 # Public submission preparation
 
-This checklist describes the 0.7.7 source candidate. It is not an uploaded draft,
-review approval, public release, or installed private-plugin update.
+This checklist describes the 0.7.8 source candidate. The separate owner-private plugin update to 0.7.8 was source-checked on November 6. No public portal draft, review approval or public release follows from that private update.
 
 ## Prepared in the package
 
@@ -50,7 +49,7 @@ full global configuration preservation is not certified.
 
 | Item | State and exact next step |
 | --- | --- |
-| Public privacy and terms URLs | Missing. The publisher must supply or approve pages covering this plugin's actual practices. Do not substitute the source license for service terms or invent retention/deletion commitments. |
+| Public privacy and terms URLs | Supplied by inheritance: Ash confirmed on November 6 that this is a Fulcra Dynamics Corporation / fulcra.ai project using Fulcra legal. The candidate links [Fulcra Privacy Policy](https://www.fulcra.ai/legal/privacy-policy) and [Terms of Use](https://www.fulcra.ai/legal/terms-of-use), verified from the corporate site. No new legal commitments are invented. |
 | Countries and commerce declarations | Not supplied. Leave these manifest fields absent until the publisher provides the actual choices; omission is not a claim of worldwide availability or no commerce. |
 | Recorded demo | Not recorded for this candidate. Follow the walkthrough below in an authorized, supported host, capture actual interactions with a recording tool, inspect playback for secrets/readability, and verify a reviewer-accessible hosting URL. Screenshots and this script are not a video. |
 | Reviewer access | Unverified. Arrange a dedicated test account and scope through secure portal fields; never include credentials in the ZIP or reuse maintainer credentials. |
@@ -62,8 +61,7 @@ full global configuration preservation is not certified.
 ## Demo walkthrough to record
 
 Use one dedicated test profile and disposable report artifact. Keep its credential
-file outside the plugin and recording. Do not start a new participant or grant
-without applicable authorization.
+file outside the plugin and recording. Ash authorized additional testing accounts, simulated human review, and use of V5 agents or recently active local Codex sessions on November 6. Keep every new test participant separately scoped; never reuse maintainer credentials.
 
 1. Show the candidate version and scoped tool discovery in the intended host.
 2. Ask: “I need a choice between bullets and a short paragraph before I can

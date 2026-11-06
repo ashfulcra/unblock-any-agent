@@ -18,6 +18,16 @@ class PackageTests(unittest.TestCase):
                 self.assertFalse((root/'unblock/fulcra_setup.py').exists())
                 if platform=='openai':self.assertEqual(manifest['extensions']['com.openai']['interface']['developerName'],'Fulcra Dynamics')
 
+    def test_exports_link_approved_fulcra_legal_without_invented_commerce(self):
+        from scripts.build_plugins import build
+        with tempfile.TemporaryDirectory() as temporary:
+            root=build(Path(temporary)/'exports')['openai']
+            metadata=json.loads((root/'plugin.json').read_text())['extensions']['com.openai']
+            self.assertEqual(metadata['interface'].get('privacyPolicyURL'),'https://www.fulcra.ai/legal/privacy-policy')
+            self.assertEqual(metadata['interface'].get('termsOfServiceURL'),'https://www.fulcra.ai/legal/terms-of-use')
+            self.assertNotIn('countries',metadata['publication'])
+            self.assertNotIn('commerce',metadata['review'])
+
     def test_portable_review_assets_are_real_contained_files(self):
         import struct
         from scripts.build_plugins import build
@@ -71,7 +81,7 @@ class PackageTests(unittest.TestCase):
             exports=build(Path(temporary)/'exports')
             for platform,root in exports.items():
                 manifest=json.loads((root/('.claude-plugin/plugin.json' if platform=='claude' else 'plugin.json')).read_text())
-                self.assertEqual(manifest['name'],'unblock');self.assertEqual(manifest['version'],'0.7.7')
+                self.assertEqual(manifest['name'],'unblock');self.assertEqual(manifest['version'],'0.7.8')
                 self.assertEqual((root/'skills/unblock/SKILL.md').read_bytes(),Path('skills/unblock/SKILL.md').read_bytes())
                 self.assertTrue((root/'skills/unblock/references/setup.md').is_file())
                 for file in root.rglob('*'):
