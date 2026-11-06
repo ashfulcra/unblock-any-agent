@@ -33,3 +33,9 @@ Native enrollments expire within an hour. A separate trusted owner operator can 
 ## What the demonstration establishes
 
 A source-verified question, separately supplied answer, actual responsible-agent recovery and verified report establish that bounded local workflow. Explicitly label simulated review and prompted pickup. API checks, export tests and package installation alone do not establish model continuation. ChatGPT web connection, broad automatic wake, arbitrary desktop model replacement and official marketplace acceptance require their own actual evidence.
+
+## Verification on November 6
+
+Two actual existing local Codex sessions completed separate disposable report rehearsals through their own narrow native profiles after labeled simulated owner review and explicit recovery prompts. A second same-session rehearsal revised its question, rejected an old owner answer snapshot at the hosted service, then recovered across a deliberate turn boundary after an unsettled report effect. The report hash and modification time remained unchanged while one original action was settled. This establishes that cooperative recovery case, not arbitrary model replacement. Fresh live questions are separate from completed rehearsals.
+
+The existing maintainer heartbeat is configured to inspect only its explicitly assigned demo routes and relay actual answers to their responsible existing chats. Configuration is separate from a verified scheduled invocation and model continuation. For an immediate presentation, ask the maintainer to check the demo answers now.
