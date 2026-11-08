@@ -5,7 +5,11 @@
   import '$lib/unblock-workspace.css';
   import { editDraft, reviewDraft, submitDraft, failedAnswer } from '$lib/answer-draft.js';
   import { onMount } from 'svelte';
+  import { afterNavigate } from '$app/navigation';
   import ExpectationsDashboard from './ExpectationsDashboard.svelte';
+  import Presentation from './Presentation.svelte';
+  import { parsePresentation, presentationLink } from '$lib/presentation.js';
+  let presentation = $state({ active: false, ids: /** @type {string[]} */ ([]), error: '' });
   /** @type {any[]} */ let requests = $state([]);
   /** @type {any[]} */ let grants = $state([]);
   /** @type {any[]} */ let expectations = $state([]);
@@ -51,7 +55,11 @@
     agents.filter((a) => a.requests.some((r) => requestView(r).lane !== 'done'))
   );
   const mapAgents = $derived(groupAgents(filtered, grants));
-  const selected = $derived(requests.find((r) => r.id === selectedId));
+  const selected = $derived(
+    requests.find(
+      (r) => r.id === selectedId && (!presentation.active || presentation.ids.includes(r.id))
+    )
+  );
   const selectedPending = $derived(
     Object.values(pending).find(
       (p) => p.request_id === selectedId && p.revision === selected?.revisions[0]?.id
@@ -74,10 +82,23 @@
   function readHash() {
     const match = window.location.hash.match(/^#request-(.+)$/);
     if (match) {
-      selectedId = decodeURIComponent(match[1]);
-      pageView = 'work';
+      try {
+        const id = decodeURIComponent(match[1]);
+        if (!presentation.active || presentation.ids.includes(id)) {
+          selectedId = id;
+          pageView = 'work';
+        }
+      } catch {
+        /* Invalid links never discard the current selection or drafts. */
+      }
     }
   }
+  function readLocation() {
+    presentation = parsePresentation(window.location.search);
+    if (presentation.active && !presentation.ids.includes(selectedId)) selectedId = '';
+    readHash();
+  }
+  afterNavigate(readLocation);
   /** @param {string} value */
   function editAnswer(value) {
     if (!selected) return;
@@ -330,7 +351,7 @@
           }
         } catch {}
     }
-    readHash();
+    readLocation();
     window.addEventListener('hashchange', readHash);
     refresh();
     const timer = setInterval(refresh, 5000);
@@ -341,67 +362,78 @@
   });
 </script>
 
-<div class="unblock-app">
-  <nav class="workspace-sidebar" aria-label="Workspace">
-    <a href="/" class="brand"
-      ><span class="brand-mark">u<span>↗</span></span><span
-        >unblock<span class="brand-subtitle">YOUR AGENT WORKSPACE</span></span
-      ></a
-    >
-    <span class="nav-section">WORKSPACE</span>
-    <button class:active={pageView === 'work'} onclick={() => (pageView = 'work')}
-      ><span aria-hidden="true">▦</span> Work
-      <span class="nav-count"
-        >{checked ? requests.filter((r) => requestView(r).lane === 'attention').length : '—'}</span
-      ></button
-    >
-    <button class:active={pageView === 'updates'} onclick={() => (pageView = 'updates')}
-      ><span aria-hidden="true">◷</span> Updates {#if concernCount}<span class="nav-count"
-          >{concernCount}</span
-        >{/if}</button
-    >
-    <button class:active={pageView === 'connections'} onclick={() => (pageView = 'connections')}
-      ><span aria-hidden="true">⌘</span> Connections</button
-    >
-    <div class="sidebar-agents">
-      <span class="nav-section">YOUR AGENTS</span>
-      {#each activeAgents as a}<button
-          class:agent-active={agentFilter === a.id}
-          onclick={() => {
-            agentFilter = agentFilter === a.id ? '' : a.id;
-            pageView = 'work';
-          }}
-          ><span class="agent-avatar small">{a.name.slice(0, 2).toUpperCase()}</span><span
-            >{a.name}</span
-          >{#if a.attention}<span class="agent-count">{a.attention}</span>{/if}</button
-        >{/each}
-      {#if !agents.length}<p class="sidebar-empty">Connected work will appear here.</p>{/if}
-    </div>
-    <div class="sidebar-bottom">
-      <a href="https://github.com/ashfulcra/unblock-any-agent" target="_blank" rel="noreferrer"
-        >Source & guides ↗</a
-      ><span>Unblock Any Agent · Pilot</span>
-    </div>
-  </nav>
+<div class="unblock-app" class:presentation-mode={presentation.active}>
+  {#if !presentation.active}
+    <nav class="workspace-sidebar" aria-label="Workspace">
+      <a href="/" class="brand"
+        ><span class="brand-mark">u<span>↗</span></span><span
+          >unblock<span class="brand-subtitle">YOUR AGENT WORKSPACE</span></span
+        ></a
+      >
+      <span class="nav-section">WORKSPACE</span>
+      <button class:active={pageView === 'work'} onclick={() => (pageView = 'work')}
+        ><span aria-hidden="true">▦</span> Work
+        <span class="nav-count"
+          >{checked
+            ? requests.filter((r) => requestView(r).lane === 'attention').length
+            : '—'}</span
+        ></button
+      >
+      <button class:active={pageView === 'updates'} onclick={() => (pageView = 'updates')}
+        ><span aria-hidden="true">◷</span> Updates {#if concernCount}<span class="nav-count"
+            >{concernCount}</span
+          >{/if}</button
+      >
+      <button class:active={pageView === 'connections'} onclick={() => (pageView = 'connections')}
+        ><span aria-hidden="true">⌘</span> Connections</button
+      >
+      <div class="sidebar-agents">
+        <span class="nav-section">YOUR AGENTS</span>
+        {#each activeAgents as a}<button
+            class:agent-active={agentFilter === a.id}
+            onclick={() => {
+              agentFilter = agentFilter === a.id ? '' : a.id;
+              pageView = 'work';
+            }}
+            ><span class="agent-avatar small">{a.name.slice(0, 2).toUpperCase()}</span><span
+              >{a.name}</span
+            >{#if a.attention}<span class="agent-count">{a.attention}</span>{/if}</button
+          >{/each}
+        {#if !agents.length}<p class="sidebar-empty">Connected work will appear here.</p>{/if}
+      </div>
+      <div class="sidebar-bottom">
+        <a href="https://github.com/ashfulcra/unblock-any-agent" target="_blank" rel="noreferrer"
+          >Source & guides ↗</a
+        ><span>Unblock Any Agent · Pilot</span>
+      </div>
+    </nav>
+  {/if}
   <main class="workspace-main">
     <header class="workspace-header">
       <div>
-        <p class="eyebrow">YOUR ATTENTION, WHERE IT MATTERS</p>
+        <p class="eyebrow">
+          {presentation.active ? 'UNBLOCK · SELECTED WORK' : 'YOUR ATTENTION, WHERE IT MATTERS'}
+        </p>
         <h1>
-          {pageView === 'work'
-            ? 'Keep good work moving.'
-            : pageView === 'updates'
-              ? 'Stay in the loop.'
-              : 'Your connected agents.'}
+          {presentation.active
+            ? 'From decision to result.'
+            : pageView === 'work'
+              ? 'Keep good work moving.'
+              : pageView === 'updates'
+                ? 'Stay in the loop.'
+                : 'Your connected agents.'}
         </h1>
         <p class="header-subtitle">
-          {pageView === 'work'
-            ? 'See who’s waiting, make the decision, and follow what happens next.'
-            : pageView === 'updates'
-              ? 'Expected updates and work that needs a closer look.'
-              : 'Manage the agents allowed to bring work into this workspace.'}
+          {presentation.active
+            ? 'A focused view of actual requests and agent progress.'
+            : pageView === 'work'
+              ? 'See who’s waiting, make the decision, and follow what happens next.'
+              : pageView === 'updates'
+                ? 'Expected updates and work that needs a closer look.'
+                : 'Manage the agents allowed to bring work into this workspace.'}
         </p>
       </div>
+      {#if presentation.active}<a class="quiet-button" href="/">Back to workspace</a>{/if}
       <button class="quiet-button refresh-button" onclick={refresh} aria-label="Refresh workspace"
         >↻ <span>Refresh</span></button
       >
@@ -418,7 +450,36 @@
           aria-label="Dismiss notice">✕</button
         >
       </div>{/if}
-    {#if pageView === 'work'}
+    {#if presentation.active}
+      <div class:has-selection={!!selected} class="work-and-detail presentation-layout">
+        <Presentation
+          rows={requests}
+          ids={presentation.ids}
+          {grants}
+          {checked}
+          {error}
+          selectionError={presentation.error}
+          onselect={selectRequest}
+        />
+        {#if selected}<RequestDetail
+            row={selected}
+            name={agentLabel(selected.agent_id)}
+            answerText={selectedPending?.answer || answers[selected.id] || ''}
+            draft={drafts[selected.id]}
+            pending={selectedPending}
+            {earlierPending}
+            onverify={(body) => answer(selected, body)}
+            {busy}
+            sourceReady={!!checked && !error}
+            {now}
+            onedit={editAnswer}
+            onreview={reviewAnswer}
+            onsend={() => answer(selected)}
+            onrecommend={() => sendRecommendation(selected)}
+            onclose={() => (selectedId = '')}
+          />{/if}
+      </div>
+    {:else if pageView === 'work'}
       <div class="workspace-stats" aria-label="Work status filters">
         {#each lanes as lane}<button
             class:stat-selected={laneFilter === lane.id}
@@ -434,6 +495,10 @@
           >{/each}
       </div>
       <div class="work-toolbar">
+        {#if filtered.length > 0 && filtered.length <= 6}<a
+            class="quiet-button"
+            href={presentationLink(filtered.map((r) => r.id))}>Present this work ↗</a
+          >{/if}
         <label class="search-field"
           ><span aria-hidden="true">⌕</span><input
             type="search"

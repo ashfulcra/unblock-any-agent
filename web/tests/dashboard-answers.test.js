@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { editDraft, reviewDraft, submitDraft, failedAnswer } from '../src/lib/answer-draft.js';
+import { parsePresentation, presentationLink } from '../src/lib/presentation.js';
 const source = fs
   .readFileSync(new URL('../src/lib/components/NeedsDashboard.svelte', import.meta.url), 'utf8')
   .split('<script>')[1]
@@ -11,10 +12,14 @@ const source = fs
   .replace(/^\s*import .*$/gm, '');
 function harness() {
   const stored = new Map();
+  let navigation;
   const c = vm.createContext({
     $state: (v) => v,
     $derived: (v) => v,
     onMount() {},
+    afterNavigate: (callback) => {
+      navigation = callback;
+    },
     requestView: () => ({ lane: 'attention' }),
     filterRequests: () => [],
     groupAgents: () => [],
@@ -24,10 +29,12 @@ function harness() {
     reviewDraft,
     submitDraft,
     failedAnswer,
+    parsePresentation,
+    presentationLink,
     sessionStorage: { setItem: (k, v) => stored.set(k, v), removeItem: (k) => stored.delete(k) }
   });
   vm.runInContext(source, c);
-  return { c, stored, run: (s) => vm.runInContext(s, c) };
+  return { c, stored, navigate: () => navigation(), run: (s) => vm.runInContext(s, c) };
 }
 const old = {
   request_id: 'request-A',
@@ -53,6 +60,36 @@ test('dashboard can submit a revised question while preserving its earlier uncer
   assert.equal(h.c.captured.intent_id, 'new');
   assert.equal(h.run('Object.keys(pending).length'), 2);
   assert.equal(h.run('pending.old.answer'), old.answer);
+});
+
+test('presentation hash navigation cannot open work outside the exact selection', () => {
+  const h = harness();
+  h.c.window = { location: { hash: '#request-outside' } };
+  h.run('presentation={active:true,ids:["selected"],error:""};readHash()');
+  assert.equal(h.run('selectedId'), '');
+  h.c.window.location.hash = '#request-selected';
+  h.run('readHash()');
+  assert.equal(h.run('selectedId'), 'selected');
+  h.c.window.location.hash = '#request-%E0%A4%A';
+  assert.doesNotThrow(() => h.run('readHash()'));
+});
+
+test('same-route navigation enters, exits and restores exact presentation selection', () => {
+  const h = harness();
+  const id = '00000000-0000-4000-8000-000000000001';
+  h.c.window = { location: { hash: '#request-outside', search: '?present=1&show=' + id } };
+  h.run('selectedId="outside"');
+  h.navigate();
+  assert.equal(h.run('presentation.active'), true);
+  assert.equal(h.run('presentation.ids[0]'), id);
+  assert.equal(h.run('selectedId'), '');
+  h.c.window.location = { hash: '', search: '' };
+  h.navigate();
+  assert.equal(h.run('presentation.active'), false);
+  h.c.window.location = { hash: '#request-' + id, search: '?present=1&show=' + id };
+  h.navigate();
+  assert.equal(h.run('presentation.active'), true);
+  assert.equal(h.run('selectedId'), id);
 });
 test('readback of an earlier dashboard answer preserves a newly reviewed draft', async () => {
   const h = harness();
