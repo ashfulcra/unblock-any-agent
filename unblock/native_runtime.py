@@ -10,6 +10,7 @@ import signal
 import stat
 import threading
 import time
+import unicodedata
 import urllib.error
 
 from .client import private_read
@@ -52,13 +53,21 @@ class RenewalRuntime:
             for selected in settings['enrollments']:
                 profile = self._path(selected['profile']); private_read(profile)
                 paths.append(profile.resolve())
-            operators.append({'config':str(cfg),'state':str(state),'sha256':fingerprint(cfg)})
-        if len(paths) != len(set(paths)):
+            operators.append({'config':str(cfg.resolve()),'state':str(state.resolve()),'sha256':fingerprint(cfg),
+                              'profiles':[str(self._path(item['profile']).resolve()) for item in settings['enrollments']]})
+        # Case/Unicode aliases may refer to the same not-yet-created file on
+        # macOS. Conservatively disallow those names on every host, and check
+        # existing inode aliases (including hardlinks) separately.
+        names = [unicodedata.normalize('NFD',str(path)).casefold() for path in paths]
+        aliased = any(left.exists() and right.exists() and os.path.samefile(left,right)
+                      for index,left in enumerate(paths) for right in paths[index+1:])
+        if len(names) != len(set(names)) or aliased:
             raise ValueError('Runtime files, operator ledgers and managed profiles must be separate')
-        self.binding = {'configuration_sha256':fingerprint(self.config),'operators':operators}
+        self.binding = {'configuration_sha256':fingerprint(self.config),'configuration_target':str(self.config.resolve()),
+                        'health_target':str(self.health.resolve()),'operators':operators}
         if self.health.exists() or self.health.is_symlink():
             prior = private_read(self.health)
-            if prior.get('binding') != self.binding:
+            if not isinstance(prior,dict) or prior.get('binding') != self.binding:
                 raise ValueError('Runtime selections changed; reconcile retained health before replacement')
 
     @staticmethod
@@ -87,22 +96,33 @@ class RenewalRuntime:
         try:
             if previous and previous.get('binding') != self.binding:
                 raise ValueError('Retained health binding changed')
-            if fingerprint(self.config) != self.binding['configuration_sha256']:
+            if (fingerprint(self.config) != self.binding['configuration_sha256'] or
+                    str(self.config.resolve()) != self.binding['configuration_target'] or
+                    str(self.health.resolve()) != self.binding['health_target']):
                 raise ValueError('Runtime configuration changed')
             # Validate every selection before allowing any owner operation.
-            for row in self.binding['operators']:
-                if fingerprint(row['config']) != row['sha256']:
+            for selected,row in zip(self.settings['operators'],self.binding['operators']):
+                config = self._path(selected['config']); state = self._path(selected['state'])
+                settings = private_read(config)
+                targets = [str(self._path(item['profile']).resolve()) for item in settings['enrollments']]
+                if (fingerprint(config) != row['sha256'] or str(config.resolve()) != row['config'] or
+                        str(state.resolve()) != row['state'] or targets != row['profiles']):
                     raise ValueError('Operator configuration changed')
             for row in self.binding['operators']:
                 try:
                     cfg = private_read(row['config'])
+                    if Path(row['state']).exists():
+                        ledger = private_read(row['state'])
+                        if (not isinstance(ledger,dict) or not isinstance(ledger.get('entries',{}),dict) or
+                                any(not isinstance(entry,dict) for entry in ledger.get('entries',{}).values())):
+                            raise ValueError('Retain malformed operator ledger for reconciliation')
                     owner = self.owner_factory(cfg['url'])
                     result = Renewal(owner,row['config'],row['state'],renew_before=1200,now=self.now).tick()
                     safe = {key:result.get(key,0) for key in ('renewed','pending','unchanged','pending_known')}
                     safe['checked'] = result.get('checked') is True
                     safe['error_count'] = len(result.get('errors',[])) + int(bool(result.get('error')))
                     safe['healthy'] = safe['checked'] and not safe['pending'] and not safe['pending_known'] and not safe['error_count']
-                except (DomainError,ValueError,KeyError,TypeError,OSError,urllib.error.URLError):
+                except (DomainError,ValueError,KeyError,TypeError,AttributeError,OSError,urllib.error.URLError):
                     safe = {'checked':False,'healthy':False,'error_count':1}
                 results.append(safe)
             healthy = all(row['healthy'] for row in results)

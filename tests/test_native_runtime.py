@@ -72,6 +72,27 @@ class NativeRuntimeTests(unittest.TestCase):
         replace_private(self.config,{**self.settings,'operators':self.settings['operators']+[{'config':str(other),'state':str(self.root/'other-state.json')}]})
         with self.assertRaises(ValueError):self.runtime()
 
+    def test_case_variant_absent_health_cannot_overwrite_pending_state(self):
+        replace_private(self.config,{**self.settings,'health':str(self.root/'STATE.json')})
+        with self.assertRaises(ValueError):self.runtime()
+        self.assertFalse(self.state.exists());self.assertEqual(self.owner.calls,[])
+
+    def test_parent_symlink_retarget_requires_reconciliation_on_tick_and_restart(self):
+        first=self.root/'first';second=self.root/'second';first.mkdir();second.mkdir()
+        alias=self.root/'selected';alias.symlink_to(first,target_is_directory=True)
+        replace_private(self.config,{**self.settings,'operators':[{'config':str(self.operator),'state':str(alias/'state.json')}]})
+        runtime=self.runtime();self.owner.lose=True;runtime.tick()
+        original=private_read(first/'state.json')['entries'][ANCHOR]['pending']['body']
+        alias.unlink();alias.symlink_to(second,target_is_directory=True)
+        with self.assertRaises(ValueError):self.runtime()
+        self.assertFalse(runtime.tick()['healthy']);self.assertEqual(len(self.owner.accepted),1)
+        self.assertEqual(private_read(first/'state.json')['entries'][ANCHOR]['pending']['body'],original)
+        self.assertFalse((second/'state.json').exists())
+
+    def test_existing_hardlink_alias_cannot_share_profile_and_health(self):
+        os.link(self.profile,self.health)
+        with self.assertRaises(ValueError):self.runtime()
+
     def test_process_lock_excludes_another_runtime_and_releases(self):
         one=self.runtime();two=self.runtime()
         with one.lock():
@@ -92,3 +113,16 @@ class NativeRuntimeTests(unittest.TestCase):
         owners={self.owner.url:self.owner,other.url:other};self.owner.offline=True
         runtime=RenewalRuntime(self.config,owner_factory=owners.__getitem__,now=lambda:1000)
         self.assertFalse(runtime.tick()['healthy']);self.assertEqual(len(other.calls),1)
+
+    def test_malformed_state_does_not_starve_an_independent_operator(self):
+        second=self.root/'second';second.mkdir();other=OwnerFixture();other.url='https://other.invalid'
+        profile=second/'worker.json';operator=second/'operator.json'
+        private_write(profile,{'transport':'fulcra-native','url':other.url,'token':'other-secret'})
+        private_write(operator,{'url':other.url,'owner_id':'owner','enrollments':[{'anchor_grant_id':ANCHOR,'profile':str(profile)}]})
+        replace_private(self.config,{**self.settings,'operators':self.settings['operators']+[{'config':str(operator),'state':str(second/'state.json')}]})
+        private_write(self.state,[])
+        runtime=RenewalRuntime(self.config,owner_factory={self.owner.url:self.owner,other.url:other}.__getitem__,now=lambda:1000)
+        result=runtime.tick()
+        self.assertFalse(result['healthy']);self.assertEqual(len(result['operators']),2)
+        self.assertEqual(len(other.calls),1);self.assertEqual(private_read(self.state),[])
+        self.assertEqual(private_read(self.health),result)
