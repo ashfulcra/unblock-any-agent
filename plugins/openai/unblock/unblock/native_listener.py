@@ -150,7 +150,13 @@ class NativeListener(Listener):
                 db.execute('BEGIN IMMEDIATE')
                 held=db.execute('SELECT 1 FROM claims WHERE request_id=? AND claim_id=?',(item['id'],claim_id)).fetchone()
                 if held:
-                    db.execute('UPDATE attempts SET result=? WHERE delivery_key=?',(outcome,key));db.execute('DELETE FROM claims WHERE request_id=? AND claim_id=?',(item['id'],claim_id))
+                    db.execute('UPDATE attempts SET result=? WHERE delivery_key=?',(outcome,key))
+                    if disposition=='unknown':
+                        # The process group stopped, but its effects are unknown.
+                        # Keep an expired claim across restart so only explicit
+                        # reconciliation can authorize another dispatch.
+                        db.execute('UPDATE claims SET lease_until=? WHERE request_id=? AND claim_id=?',(time.time()-1,item['id'],claim_id))
+                    else:db.execute('DELETE FROM claims WHERE request_id=? AND claim_id=?',(item['id'],claim_id))
                 else:outcome='claim_replaced_reconcile_required';disposition='unknown'
             evidence={'queued':'Trusted local launcher returned zero. This receipt does not assert agent progress.','failed':'Local route failed or timed out. Repair the trusted route and check retained actions before retrying.','unknown':'Delivery or source could not be verified. Inspect the previous worker and retained actions before retrying.'}[disposition]
             if not self._receipt(item,revision,answers,disposition,evidence,claim_id,defer=source_failed):source_failed=True

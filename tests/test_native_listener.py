@@ -64,6 +64,24 @@ class NativeListenerTests(unittest.TestCase):
         self.client.fail=True;result=listener.tick()
         self.assertFalse(result['checked']);self.assertEqual(result['pending_known'],1)
 
+    def test_source_loss_after_real_effect_requires_reconciliation_across_restart(self):
+        self.answer();effect=self.root/'effects'
+        script='import pathlib; p=pathlib.Path('+repr(str(effect))+'); p.write_text(p.read_text()+"x" if p.exists() else "x")'
+        self.routes.write_text(json.dumps({'alpha':{**self.route,'argv':[sys.executable,'-c',script]}}))
+        listener=self.listener();run=listener._run
+        def interrupted_readback(route,payload):
+            outcome=run(route,payload);self.client.fail=True;return outcome
+        listener._run=interrupted_readback
+        self.assertFalse(listener.tick()['checked']);self.assertEqual(effect.read_text(),'x')
+        self.client.fail=False
+        restarted=self.listener();result=restarted.tick()
+        self.assertEqual(result['attempts'],[],'Source recovery alone must not replay an uncertain effect')
+        self.assertEqual(result['errors'][0]['code'],'dispatch_recovery_required')
+        self.assertEqual(effect.read_text(),'x')
+        restarted.recover(RID,'Verified launcher/process group stopped; original effect read back and reconciled by responsible worker')
+        self.row['state']='completed';self.save()
+        self.assertEqual(self.listener().tick()['attempts'],[])
+
     def test_withdrawn_question_is_retained_without_launching_a_receiver(self):
         self.answer();self.row['state']='withdrawn';self.save()
         result=self.listener().tick()
