@@ -1,18 +1,61 @@
-# Run a live Unblock demo
+# Run a focused Unblock demo
 
-Use the existing [personal dashboard](https://unblock-any-agent.my.fulcra.ai/) and [private plugin](https://chatgpt.com/plugins/plugins_6ad28048f1e08191b3cf37f769d80877). These links require the owner's existing access; the private plugin is not a public listing.
+Use the existing [personal dashboard](https://unblock-any-agent.my.fulcra.ai/) and [private plugin](https://chatgpt.com/plugins/plugins_6ad28048f1e08191b3cf37f769d80877). The owner keeps existing access; this is not a public listing.
 
-## A three-minute demonstration
 
-1. Open the dashboard or ask the connected human inbox: **Show my agent decisions.** Sign in through the normal Fulcra flow if the browser session expired.
-2. Open a fresh **DEMO** question. Read the agent's actual name, question, recommendation and next action. Rehearsal answers are explicitly labeled **SIMULATED REVIEW**; leave fresh live questions unanswered until the presenter chooses.
-3. Choose an answer. The card should first show that the answer awaits pickup. A saved answer is not completed agent work.
-4. In the responsible agent's existing chat, say: **Recover your Unblock work through your own assigned profile and continue the disposable demo report. Check the current question, every answer and uncertain effects before acting.** This demonstration uses explicit prompted pickup.
-5. Show the card's verified progress and the responsible agent's report. Check its report path, content and source evidence. Completion requires that agent's source-checked progress, not a launcher receipt or another agent's claim.
+Use a fresh, clearly labeled sample project and two actual scoped agents. The
+sample is a fictional six-person gathering: one agent needs indoor/patio setup,
+the other needs conversation/movie-night entertainment. Neither performs real
+device, account, invitation or publication actions. The resulting setup and
+entertainment plans make the consequence of each decision easy to see.
 
-Keep one completed rehearsal available as a fallback if a live host or network becomes unavailable. Explain any failed or expired connection honestly; retain its pending question and effects for recovery.
+The ordinary workspace's **Present this work** link appears when its current
+filters select one to six requests. It opens an owner-authenticated presentation
+of those exact IDs, in that order. Keep its URL for the demonstration. It does
+not add access, create data, send answers or choose decisions. Missing requests
+remain missing; old or unrelated work is never substituted. **Back to workspace**
+restores the full dashboard. Open a card to use the same full question, context,
+recommendation and guarded answer controls as the ordinary workspace.
+
+### Five-minute presenter path
+
+1. **0:00–0:30 — The work waiting for you.** Open the privately retained live
+   presentation link with two unanswered sample requests. Explain the fictional
+   gathering and the two agents' distinct roles; their actual identity remains
+   visible. Show what each decision unlocks.
+2. **0:30–1:15 — Make a real choice.** Open each full request. Review context and
+   recommendation, then choose your own answer or Send recommendation. The card
+   should say **Answer saved**, not Completed. A source refresh failure must be
+   shown and resolved before proceeding.
+3. **1:15–3:30 — Continue the responsible agents.** In the maintainer chat say
+   “Continue the two November9 demo agents from their saved answers.” The
+   maintainer reviews each current revision, all answer IDs and uncertain effects,
+   persists an exact dispatch intent/receipt, and uses the supported route to each
+   existing chat. This is explicit live relay, not automatic desktop wake and not
+   the three-hour background cadence. Keep the responsible chat available if a
+   direct prompted continuation is needed. Never launch twice after uncertainty.
+4. **3:30–5:00 — See the consequence.** Refresh shows actual resumed/completed
+   source evidence. Read the useful plan in the result area and inspect full
+   evidence/report when needed. A launch receipt alone never satisfies this step.
+   If continuation takes longer, show the honest waiting state and the separately
+   labeled, source-verified completed rehearsal. Do not call it the live result.
+
+In the November8 rehearsal, completion followed the explicit relay in about60seconds for the setup agent and120seconds for the entertainment agent. These are measured local results, not a timing guarantee. Allow five minutes, with the completed rehearsal available if the live path takes longer.
+
+### Rehearsal and readiness
+
+Keep simulated-review rehearsal and unanswered live requests separate, with
+different logical keys and report paths. Preserve exact reviewed revisions,
+complete answer sets, action/settlement records, result hashes and timing in the
+private receiver checkpoints. Do not reuse completed November6 questions.
+Record only actions actually tested. Compiled component checks and deployed API/
+bundle readbacks do not prove visual browser behavior. When supported browser
+control is unavailable, retain that readiness item explicitly rather than bypass
+it. Background reviews remain every three hours; the renewal-only service is not
+an answer receiver.
 
 ## Connect another agent
+
 
 The owner enrolls **Agent worker** from **Connect an agent** on the dashboard using a stable agent ID, display name and environment. Save its sealed credential in a private 0600 profile outside the package. Give that agent only its own profile path. Do not give it the owner's Fulcra authentication or another agent's profile.
 
@@ -30,16 +73,6 @@ Give the agent this starter instruction:
 
 Native enrollments expire within an hour. A separate trusted owner operator can renew only explicitly selected scopes using [native renewal](native-renewal.md). The worker package does not start renewal, monitoring or background wake. An expired credential needs that authorized owner workflow; never switch global CLI ownership or move owner credentials into a worker.
 
-## What the demonstration establishes
+## Preserve historical evidence
 
-A source-verified question, separately supplied answer, actual responsible-agent recovery and verified report establish that bounded local workflow. Explicitly label simulated review and prompted pickup. API checks, export tests and package installation alone do not establish model continuation. ChatGPT web connection, broad automatic wake, arbitrary desktop model replacement and official marketplace acceptance require their own actual evidence.
-
-## Verification on November 6
-
-Two actual existing local Codex sessions completed separate disposable report rehearsals through their own narrow native profiles after labeled simulated owner review and explicit recovery prompts. A second same-session rehearsal revised its question, rejected an old owner answer snapshot at the hosted service, then recovered across a deliberate turn boundary after an unsettled report effect. The report hash and modification time remained unchanged while one original action was settled. This establishes that cooperative recovery case, not arbitrary model replacement. Fresh live questions are separate from completed rehearsals.
-
-The existing maintainer heartbeat is configured to inspect only its explicitly assigned demo routes and relay actual answers to their responsible existing chats. Configuration is separate from a verified scheduled invocation and model continuation. For an immediate presentation, ask the maintainer to check the demo answers now.
-
-A separate November 6 rehearsal observed a genuine maintainer heartbeat, a supported relay to the original local Codex session, and that responsible agent’s source-checked completed report without another human check prompt. The report had one action/settlement and no uncertain effect. Full continuation missed its original 20-minute window, so it does not establish timely automatic pickup. This is a local scheduled relay followed by prompted model recovery; retain the immediate presentation prompt above as the verified interactive path.
-
-The owner’s main in-app dashboard was subsequently authenticated through the normal Google/Fulcra flow and checked against the live native source. Both fresh live cards, full report-only contexts, recommendations and empty decision controls were inspected without submitting an answer. An earlier different-account attempt was correctly denied; no owner configuration or credential transfer was used to resolve it.
+The November6 rehearsal and delegated live reports are completed. Do not re-answer, relay or rewrite those records. The separate scheduled-relay chain was verified but missed its original20minute target. It proves neither timely pickup nor broad automatic wake. Historical owner browser observations remain historical; a new source/bundle deployment does not establish fresh visual acceptance. Full remote ChatGPT web, arbitrary stopped-model replacement and marketplace acceptance remain separate.

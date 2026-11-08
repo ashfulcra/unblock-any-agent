@@ -30,6 +30,13 @@
 .unblock-app textarea {
   font: inherit;
 }
+.unblock-app.presentation-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+.presentation-layout > .presentation {
+  width: 100%;
+  min-width: 0;
+}
 .unblock-app button {
   cursor: pointer;
   text-align: left;
