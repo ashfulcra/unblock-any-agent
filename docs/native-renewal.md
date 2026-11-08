@@ -38,6 +38,43 @@ Before enrollment, the operator saves the exact body, fixed expiry and stable in
 
 If the CLI can no longer authenticate, reconnect that existing owner account. Reconcile explicit configuration/profile changes against retained state before restarting. Changing the configuration or replacing the ledger to forget an uncertain enrollment is not a recovery procedure.
 
+## Supervised renewal without a model heartbeat
+
+The trusted `unblock.native_runtime` entry point runs existing prepared operators
+and persists private health independently of model turns. It remains outside
+worker/plugin exports. Select one to four existing operator configuration/state
+pairs in an owned mode0600 file:
+
+```json
+{
+  "operators": [{"config": "/PRIVATE/operator.json", "state": "/PRIVATE/operator-state.json"}],
+  "health": "/PRIVATE/renewal-health.json",
+  "interval": 60
+}
+```
+
+Run one check with `python3 -m unblock.native_runtime --config /PRIVATE/runtime.json --once`,
+or omit `--once` for a process supervised by the authorized host service manager.
+No service is installed by either command. Establish that service's operating
+owner, exact selections, source revision and stop/restart procedure explicitly.
+The existing Fulcra CLI handles its own credential refresh through its normal
+`auth print-access-token` command; missing/revoked login remains a real blocker.
+
+The runtime takes one private process lock, preserves each operator's existing
+lock/journal, and rejects shared profile/state/health targets. Configuration
+fingerprints bind retained health across restart. Changed selections require
+explicit reconciliation; replacing state to forget a pending intent is forbidden.
+Each pass independently checks every group, so one unavailable operator does not
+starve the others. No raw exception, token or enrollment response enters health.
+
+Inspect `healthy`, `checked_at`, `last_success_at` and every operator's pending/error
+counts. A stopped process leaves an old health snapshot, not a live heartbeat;
+compare freshness with its configured interval plus actual bounded pass duration.
+A failed pass retains the prior success timestamp. One-shot exit2 means the pass
+was not healthy. Successful renewal proves current connections only: it neither
+dispatches an agent nor proves answer pickup. Keep listener activation and actual
+responsible-model continuation evidence separate.
+
 ## Observed bounded proof
 
 The maintainer exercised two dedicated short-lived synthetic connections against the deployed native service. Existing 45-second grants expired and were denied; a separate operator renewed 60-second grants with identical worker/listener scopes. Stopping the operator allowed the replacements to expire, and the running listener reported source unavailable while retaining the exact pending request. Restarting the operator restored access and the same source/identity/listener ledger recovered that obligation. The probe then completed its synthetic request, stopped both processes and revoked all six test grants. Revocation prevented further renewal, and the owner token was absent from state, profiles and logs.
