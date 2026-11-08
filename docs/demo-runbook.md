@@ -17,7 +17,7 @@ remain missing; old or unrelated work is never substituted. **Back to workspace*
 restores the full dashboard. Open a card to use the same full question, context,
 recommendation and guarded answer controls as the ordinary workspace.
 
-### Three-minute story
+### Five-minute presenter path
 
 1. **0:00–0:30 — The work waiting for you.** Open the privately retained live
    presentation link with two unanswered sample requests. Explain the fictional
@@ -27,18 +27,20 @@ recommendation and guarded answer controls as the ordinary workspace.
    recommendation, then choose your own answer or Send recommendation. The card
    should say **Answer saved**, not Completed. A source refresh failure must be
    shown and resolved before proceeding.
-3. **1:15–2:15 — Continue the responsible agents.** In the maintainer chat say
+3. **1:15–3:30 — Continue the responsible agents.** In the maintainer chat say
    “Continue the two November9 demo agents from their saved answers.” The
    maintainer reviews each current revision, all answer IDs and uncertain effects,
    persists an exact dispatch intent/receipt, and uses the supported route to each
    existing chat. This is explicit live relay, not automatic desktop wake and not
    the three-hour background cadence. Keep the responsible chat available if a
    direct prompted continuation is needed. Never launch twice after uncertainty.
-4. **2:15–3:00 — See the consequence.** Refresh shows actual resumed/completed
+4. **3:30–5:00 — See the consequence.** Refresh shows actual resumed/completed
    source evidence. Read the useful plan in the result area and inspect full
    evidence/report when needed. A launch receipt alone never satisfies this step.
    If continuation takes longer, show the honest waiting state and the separately
    labeled, source-verified completed rehearsal. Do not call it the live result.
+
+In the November8 rehearsal, completion followed the explicit relay in about60seconds for the setup agent and120seconds for the entertainment agent. These are measured local results, not a timing guarantee. Allow five minutes, with the completed rehearsal available if the live path takes longer.
 
 ### Rehearsal and readiness
 
