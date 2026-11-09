@@ -76,6 +76,19 @@ test('enrollment retries use one stable expiry before and after ingestion visibi
  await assert.rejects(()=>f.service.handle('enroll',{cookieToken:f.token,body:{...body,intent_id:'bad',expires_at:999999}}));
 });
 
+test('visible renewal retry must respect the current owner session expiry and retain one original grant',async()=>{
+ const f=fixture(2000),owner=(/** @type {any} */ body)=>f.service.handle('enroll',{cookieToken:f.token,body});
+ const parent=await owner({intent_id:'capped-root',agent_id:'alpha',name:'Alpha',expires_at:1060});f.publish();
+ const body={intent_id:'capped-child',agent_id:'alpha',name:'Alpha',expires_at:1100,renewal_of:parent.grant_id};
+ const child=await owner(body);f.publish();f.advance(45);f.sessionExpires(1050);
+ assert.equal((await f.service.handle('prepare_enrollment',{cookieToken:f.token})).expires_at,1050);
+ await assert.rejects(()=>owner(body),/within the current session/);
+ assert.equal((await f.service.handle('attention',{cookieToken:f.token})).grants.length,2);
+ f.sessionExpires(2000);
+ assert.equal((await owner(body)).record_id,child.record_id);f.publish();
+ assert.equal((await f.service.handle('attention',{cookieToken:f.token})).grants.length,2);
+});
+
 test('recorded progress retries remain historical after answers or question revisions change',async()=>{
  const f=fixture();const owner=(/** @type {string} */ op,/** @type {any} */ body)=>f.service.handle(op,{cookieToken:f.token,body});
  const e=await owner('enroll',{intent_id:'a',agent_id:'alpha',name:'Alpha'});f.publish();

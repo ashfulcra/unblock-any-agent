@@ -119,6 +119,7 @@ class Renewal:
         if entry.get('latest'):
             current=[g for g in grants if g['grant_id']==entry['latest']['grant_id']]
             if len(current)!=1 or current[0].get('revoked') or self._scope(current[0])!=scope:raise DomainError('operator_latest_grant_missing_or_revoked',403)
+            if any(current[0].get(field)!=entry['latest'].get(field) for field in ('record_id','expires_at')):raise DomainError('operator_latest_grant_changed_reconcile',409)
         return scope
 
     def _retire_expired(self,state,entry,grant,path):
@@ -198,6 +199,7 @@ class Renewal:
                         if error.code not in {
                             'operator_anchor_missing_ambiguous_or_revoked',
                             'operator_latest_grant_missing_or_revoked',
+                            'operator_latest_grant_changed_reconcile',
                             'operator_scope_changed_reconcile',
                             'operator_profile_changed_reconcile',
                             'operator_expired_intent_ambiguous_reconcile',

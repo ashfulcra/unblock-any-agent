@@ -35,6 +35,7 @@ class OwnerFixture:
         if operation!='enroll':raise AssertionError('Unexpected owner operation')
         if data['expires_at']<=self.clock:raise DomainError('expired_body',400)
         self.calls.append(copy.deepcopy(data))
+        if data['expires_at']>(self.clock+3600 if self.prepared_expiry is None else self.prepared_expiry):raise DomainError('owner_expiry_limit',400)
         if self.block:self.block[0].set();self.block[1].wait(3)
         gid=str(uuid.uuid5(uuid.NAMESPACE_URL,data['agent_id']+data['intent_id']));rid=str(uuid.uuid5(uuid.NAMESPACE_URL,json.dumps(data,sort_keys=True)))
         grant={**data,'record_id':rid,'grant_id':gid,'revoked':False}
@@ -76,11 +77,16 @@ class NativeRenewalTests(unittest.TestCase):
         self.assertEqual(len(self.owner.accepted),2)
         self.assertEqual(self.owner.accepted[-1]['renewal_of'],json.loads(original)['grant_id'])
 
-    def test_pending_lost_response_is_reconciled_even_when_owner_limit_shrinks(self):
+    def test_pending_lost_response_survives_owner_limit_shrink_until_same_intent_can_reconcile(self):
         self.make_visible();self.owner.clock=1040;self.owner.prepared_expiry=1110;self.owner.lose=True
         self.assertFalse(self.renewal().tick()['checked'])
         body=copy.deepcopy(self.owner.calls[-1]);self.assertEqual(body['expires_at'],1100)
         self.owner.clock=1045;self.owner.prepared_expiry=1050;self.owner.publish()
+        result=self.renewal().tick();self.assertFalse(result['checked'])
+        self.assertEqual(result['error'],'owner_expiry_limit');self.assertEqual(result['pending_known'],1)
+        self.assertEqual(private_read(self.state)['entries'][ANCHOR]['pending']['body'],body)
+        self.assertEqual(private_read(self.profile)['expires_at'],1060)
+        self.owner.prepared_expiry=1110
         result=self.renewal().tick();self.assertEqual(result['renewed'],1)
         self.assertEqual(self.owner.calls[-1],body);self.assertEqual(len(self.owner.accepted),2)
         self.assertEqual(private_read(self.profile)['expires_at'],1100)
@@ -115,6 +121,19 @@ class NativeRenewalTests(unittest.TestCase):
         self.owner.grants[-1]['revoked']=True;result=self.renewal().tick()
         self.assertFalse(result['checked']);self.assertEqual(result['errors'][0]['code'],'operator_latest_grant_missing_or_revoked')
         self.assertEqual(self.profile.read_bytes(),original);self.assertEqual(len(self.owner.calls),calls)
+
+    def test_nonextending_limit_rejects_changed_source_record_or_expiry(self):
+        self.make_visible();self.owner.clock=1040;self.owner.prepared_expiry=1050
+        original=self.profile.read_bytes();calls=len(self.owner.calls)
+        grant=self.owner.grants[-1];saved=copy.deepcopy(grant)
+        for field,value in (('record_id','changed-record'),('expires_at',1030)):
+            with self.subTest(field=field):
+                grant.update(saved);grant[field]=value
+                result=self.renewal().tick()
+                self.assertFalse(result['checked'])
+                self.assertEqual(result['errors'][0]['code'],'operator_latest_grant_changed_reconcile')
+                self.assertEqual(self.profile.read_bytes(),original);self.assertEqual(len(self.owner.calls),calls)
+                self.assertNotIn('pending',private_read(self.state)['entries'][ANCHOR])
 
     def test_pending_and_lost_response_retries_keep_one_intent_expiry_and_original_profile(self):
         self.owner.lose=True;result=self.renewal().tick();self.assertFalse(result['checked']);self.assertEqual(private_read(self.profile)['token'],'original')

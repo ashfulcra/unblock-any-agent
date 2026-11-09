@@ -17,13 +17,13 @@
 
 - Equal and shorter prepared expiry must leave the valid current profile and native history untouched.
 - A restart followed by a real extension must still renew once.
-- A lost response/pending intent must settle unchanged even after the current owner limit shrinks.
+- A lost response/pending intent must remain exact and pending when the current owner limit shrinks; settlement resumes only when the unchanged expiry is permitted or after normal expired-intent source reconciliation.
 - Revoked/changed profiles cannot be reported healthy through the guard.
 - Bootstrap and actually expired leases must retain their separate behavior.
 
 ### Task 1: Guard and regressions
 
-**Files:** unblock/native_renewal.py, tests/test_native_renewal.py.
+**Files:** unblock/native_renewal.py, tests/test_native_renewal.py; service-boundary test/fixture in web/tests (no web runtime change).
 
 - [ ] Extend the controlled owner fixture with a prepared absolute expiry.
 - [ ] Add tests for equal/shorter expiry across ticks/restart, later extension, pending lost-response recovery, bootstrap, expired lease/session and profile drift.
