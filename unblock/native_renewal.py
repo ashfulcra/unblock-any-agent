@@ -155,6 +155,11 @@ class Renewal:
                         if not pending:
                             expiry=min(self.owner.call('prepare_enrollment')['expires_at'],int(self.now())+self.lease)
                             if expiry<=self.now():raise DomainError('operator_session_expired_reconnect',401)
+                            # A capped owner session may offer no additional lifetime.
+                            # Only defer a verified, published lease; pending effects
+                            # and initial bootstrap still require reconciliation.
+                            if self.now()<entry.get('latest',{}).get('expires_at',0) and expiry<=entry['latest']['expires_at']:
+                                result['unchanged']+=1;continue
                             pending={'body':{**scope,'intent_id':'renew:'+str(uuid.uuid4()),'expires_at':expiry,'renewal_of':entry.get('latest',{}).get('grant_id',anchor)}}
                             entry['pending']=pending;self._save(state) # Durable before any enrollment attempt.
                         if pending['body']['expires_at']<=self.now():

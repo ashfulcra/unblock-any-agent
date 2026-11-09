@@ -1,0 +1,11 @@
+# Avoid nonextending automatic renewals
+
+Actual owner-source inspection of the existing selected16 families found120 renewal edges with identical parent/child expiry, including96 expiring on November9. This is avoidable grant churn; it does not establish the cause of earlier transport timeouts. Preserve every historical record.
+
+For an already source-verified, published current lease tracked in the existing operator ledger, prepare the next permissible expiry normally. When no intent is pending and that expiry cannot extend the still-valid tracked lease, keep the current credential/profile and count the selection unchanged. Do not persist an enrollment intent or call enroll. Continue checking normally; once the owner's normal CLI authentication permits a longer lease, renew using the same family and ledger.
+
+Never apply the deferral before source/scope/revocation/profile-binding validation. Never skip reconciliation of an existing pending or uncertain enrollment. Preserve the bootstrap path when the ledger has no published latest lease; an anchor alone does not prove the local credential is current. A past session limit remains an error, and an expired tracked lease must renew when a valid new expiry is available.
+
+No custom owner refresh loop, lease extension beyond permitted expiry, new participant/service/automation, credential transfer, ledger reset, historical deletion, plugin update or public release. Deploy only to the same existing selected14/2 trusted renewal runtime, retaining its configuration, locks, journals, selected profile paths and launchd identity. The frozen maintainer configuration remains separate. The demo's unanswered live choices and pending actual visual-review request remain unchanged.
+
+Acceptance: meaningful equal/shorter expiry, restart/later extension, pending-response-loss, bootstrap, expired lease and binding regressions; full existing Python/MCP tests and export parity; fresh code review and exact source readback; actual supervised replacement and selected16 profile/state/native/health verification with no broadened scope. Do not infer a live execution of the guard branch solely from healthy process status.

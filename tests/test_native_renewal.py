@@ -24,14 +24,14 @@ ANCHOR='11111111-1111-4111-8111-111111111111'
 class OwnerFixture:
     url='https://fixture.invalid'
     def __init__(self):
-        self.clock=1000;self.owner_id='owner';self.lose=False;self.offline=False;self.calls=[];self.accepted=[];self.block=None
+        self.clock=1000;self.owner_id='owner';self.lose=False;self.offline=False;self.calls=[];self.accepted=[];self.block=None;self.prepared_expiry=None
         self.grants=[{'grant_id':ANCHOR,'record_id':'anchor-record','agent_id':'alpha','name':'Alpha','kind':'agent','environment':'here','agent_ids':['alpha'],'expires_at':1005,'revoked':False}]
     def publish(self):self.grants.extend(g for g in self.accepted if not any(v['record_id']==g['record_id'] for v in self.grants))
     def call(self,operation,data=None):
         if self.offline:raise DomainError('unavailable',503)
         if operation=='identity':return {'kind':'owner','id':self.owner_id}
         if operation=='attention':return {'source':'checked','principal':{'kind':'owner','id':self.owner_id},'grants':copy.deepcopy(self.grants)}
-        if operation=='prepare_enrollment':return {'expires_at':self.clock+3600}
+        if operation=='prepare_enrollment':return {'expires_at':self.clock+3600 if self.prepared_expiry is None else self.prepared_expiry}
         if operation!='enroll':raise AssertionError('Unexpected owner operation')
         if data['expires_at']<=self.clock:raise DomainError('expired_body',400)
         self.calls.append(copy.deepcopy(data))
@@ -50,6 +50,71 @@ class NativeRenewalTests(unittest.TestCase):
         private_write(self.config,{'url':self.owner.url,'enrollments':[{'anchor_grant_id':ANCHOR,'profile':str(self.profile)}]})
     def renewal(self):return Renewal(self.owner,self.config,self.state,lease_seconds=60,renew_before=30,now=lambda:self.owner.clock)
     def make_visible(self):self.renewal().tick();self.owner.publish();return self.renewal().tick()
+
+    def test_equal_expiry_preserves_valid_profile_across_restart_then_extends_once(self):
+        self.assert_nonextending_lease_preserved(1060)
+
+    def test_shorter_expiry_preserves_valid_profile_across_restart_then_extends_once(self):
+        self.assert_nonextending_lease_preserved(1055)
+
+    def assert_nonextending_lease_preserved(self,cap):
+        self.assertEqual(self.make_visible()['renewed'],1)
+        original=self.profile.read_bytes();stamp=self.profile.stat().st_mtime_ns
+        calls=len(self.owner.calls);self.owner.prepared_expiry=cap
+        for clock in (1040,1050):
+            self.owner.clock=clock
+            result=self.renewal().tick() # A fresh instance exercises the saved ledger.
+            self.assertTrue(result['checked']);self.assertEqual(result['unchanged'],1)
+            self.assertEqual(result['pending'],0);self.assertEqual(result['renewed'],0)
+            self.assertEqual(len(self.owner.calls),calls);self.assertEqual(len(self.owner.accepted),1)
+            self.assertEqual(self.profile.read_bytes(),original);self.assertEqual(self.profile.stat().st_mtime_ns,stamp)
+            self.assertNotIn('pending',private_read(self.state)['entries'][ANCHOR])
+        self.owner.prepared_expiry=1110
+        self.assertEqual(self.renewal().tick()['pending'],1)
+        self.owner.publish();self.assertEqual(self.renewal().tick()['renewed'],1)
+        self.assertEqual(private_read(self.profile)['expires_at'],1110)
+        self.assertEqual(len(self.owner.accepted),2)
+        self.assertEqual(self.owner.accepted[-1]['renewal_of'],json.loads(original)['grant_id'])
+
+    def test_pending_lost_response_is_reconciled_even_when_owner_limit_shrinks(self):
+        self.make_visible();self.owner.clock=1040;self.owner.prepared_expiry=1110;self.owner.lose=True
+        self.assertFalse(self.renewal().tick()['checked'])
+        body=copy.deepcopy(self.owner.calls[-1]);self.assertEqual(body['expires_at'],1100)
+        self.owner.clock=1045;self.owner.prepared_expiry=1050;self.owner.publish()
+        result=self.renewal().tick();self.assertEqual(result['renewed'],1)
+        self.assertEqual(self.owner.calls[-1],body);self.assertEqual(len(self.owner.accepted),2)
+        self.assertEqual(private_read(self.profile)['expires_at'],1100)
+        self.assertNotIn('pending',private_read(self.state)['entries'][ANCHOR])
+
+    def test_untracked_bootstrap_still_publishes_profile_before_deferring_equal_expiry(self):
+        self.owner.prepared_expiry=1005
+        self.assertEqual(self.renewal().tick()['pending'],1)
+        self.owner.publish();self.assertEqual(self.renewal().tick()['renewed'],1)
+        self.assertEqual(private_read(self.profile)['expires_at'],1005)
+        calls=len(self.owner.calls);result=self.renewal().tick()
+        self.assertEqual(result['unchanged'],1);self.assertEqual(len(self.owner.calls),calls)
+
+    def test_expired_tracked_lease_renews_and_exhausted_owner_limit_stays_a_failure(self):
+        self.make_visible();self.owner.clock=1070;self.owner.prepared_expiry=1080
+        self.assertEqual(self.renewal().tick()['pending'],1)
+        self.owner.publish();self.assertEqual(self.renewal().tick()['renewed'],1)
+        self.assertEqual(private_read(self.profile)['expires_at'],1080)
+        self.owner.clock=1081;self.owner.prepared_expiry=1080
+        result=self.renewal().tick();self.assertFalse(result['checked'])
+        self.assertEqual(result['error'],'operator_session_expired_reconnect')
+        self.assertNotIn('pending',private_read(self.state)['entries'][ANCHOR])
+
+    def test_nonextending_limit_cannot_hide_profile_drift_or_revocation(self):
+        self.make_visible();self.owner.clock=1040;self.owner.prepared_expiry=1060
+        original=self.profile.read_bytes();calls=len(self.owner.calls)
+        replace_private(self.profile,{**private_read(self.profile),'token':'changed'})
+        changed=self.profile.read_bytes();result=self.renewal().tick()
+        self.assertFalse(result['checked']);self.assertEqual(result['errors'][0]['code'],'operator_profile_changed_reconcile')
+        self.assertEqual(self.profile.read_bytes(),changed);self.assertEqual(len(self.owner.calls),calls)
+        self.profile.write_bytes(original)
+        self.owner.grants[-1]['revoked']=True;result=self.renewal().tick()
+        self.assertFalse(result['checked']);self.assertEqual(result['errors'][0]['code'],'operator_latest_grant_missing_or_revoked')
+        self.assertEqual(self.profile.read_bytes(),original);self.assertEqual(len(self.owner.calls),calls)
 
     def test_pending_and_lost_response_retries_keep_one_intent_expiry_and_original_profile(self):
         self.owner.lose=True;result=self.renewal().tick();self.assertFalse(result['checked']);self.assertEqual(private_read(self.profile)['token'],'original')
