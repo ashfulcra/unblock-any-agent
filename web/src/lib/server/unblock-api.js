@@ -59,6 +59,14 @@ export function createService(config) {
   }
   /** @param {any} rows */
   const view = rows => projectEvents(rows);
+  /** @param {any[]} events @param {any[]} selected */
+  function projectGrants(events,selected) {
+    return selected.map(e=>{
+      let revoked=false;
+      try {enrollmentRecord(e.payload.grant_id,events);} catch {revoked=true;}
+      return {record_id:e.id,agent_id:e.agent_id,intent_id:e.intent_id,...e.payload,revoked};
+    });
+  }
   return {
     /** @param {string} operation @param {any} input @returns {Promise<any>} */
     async handle(operation,input) {
@@ -75,7 +83,19 @@ export function createService(config) {
       if (user.userid !== config.ownerId) throw new Error('Account is not the pilot owner');
       const rows=await load(token);
       /** @type {any[]} */ let events,requests,expectations;
-      try {events=readEvents(rows);requests=view(rows);expectations=projectExpectations(rows,now());} catch {throw new Error('Native source unavailable or invalid');}
+      try {events=readEvents(rows);} catch {throw new Error('Native source unavailable or invalid');}
+      try {requests=view(rows);expectations=projectExpectations(rows,now());} catch {throw new Error('Native source unavailable or invalid');}
+      if (operation==='attention' && body.view!==undefined) {
+        if (agent) throw new Error('Owner operation required');
+        if (body.view!=='renewal' || Object.keys(body).some(k=>!['view','grant_ids'].includes(k))) throw new Error('Invalid renewal selection');
+        const grant_ids=body.grant_ids;
+        if (!Array.isArray(grant_ids) || !grant_ids.length || grant_ids.length>60) throw new Error('Invalid renewal selection');
+        const ids=new Set(grant_ids.map(reference));
+        if (ids.size!==grant_ids.length) throw new Error('Invalid renewal selection');
+        const selected=events.filter(e=>e.kind==='enroll' && ids.has(e.payload.grant_id));
+        if (new Set(selected.map(e=>e.payload.grant_id)).size!==selected.length) throw new Error('Native source unavailable or ambiguous renewal enrollment');
+        return {principal:{kind:'owner',id:user.userid},grants:projectGrants(events,selected),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
+      }
       if (agent) authorizeAgent(grant,events,user.userid,now());
       const principal=agent?{kind:grant.kind || 'agent',id:grant.agent_id,environment:grant.environment || 'pilot',agent_ids:grant.agent_ids || [grant.agent_id]}:{kind:'owner',id:user.userid};
       const allowed=(/** @type {any} */ r)=>!agent || (principal.kind==='listener'?principal.agent_ids.includes(r.agent_id):r.agent_id===grant.agent_id);
@@ -87,7 +107,7 @@ export function createService(config) {
       }
       if (['attention','recover'].includes(operation)) {
         if (body.request_id && !requests.some(r=>r.id===body.request_id && allowed(r))) throw new Error('Request not permitted');
-        return {principal,requests:requests.filter(r=>allowed(r) && (!body.request_id || r.id===body.request_id)),expectations:expectations.filter(r=>allowedExpectation(r) && (!body.request_id || r.request_ids.includes(body.request_id))),grants:agent?[]:events.filter(e=>e.kind==='enroll').map(e=>{let revoked=false;try{enrollmentRecord(e.payload.grant_id,events);}catch{revoked=true;}return {record_id:e.id,agent_id:e.agent_id,intent_id:e.intent_id,...e.payload,revoked};}),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
+        return {principal,requests:requests.filter(r=>allowed(r) && (!body.request_id || r.id===body.request_id)),expectations:expectations.filter(r=>allowedExpectation(r) && (!body.request_id || r.request_ids.includes(body.request_id))),grants:agent?[]:projectGrants(events,events.filter(e=>e.kind==='enroll')),checked_at:new Date(now()*1000).toISOString(),source:'checked'};
       }
       if(operation==='work_update') {
         if(principal.kind!=='agent')throw new Error('Enrolled worker required');

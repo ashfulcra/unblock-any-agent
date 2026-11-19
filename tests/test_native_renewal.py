@@ -1,5 +1,6 @@
 import concurrent.futures
 import copy
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -25,19 +26,25 @@ class OwnerFixture:
     url='https://fixture.invalid'
     def __init__(self):
         self.clock=1000;self.owner_id='owner';self.lose=False;self.offline=False;self.calls=[];self.accepted=[];self.block=None;self.prepared_expiry=None
+        self.attention_calls=[]
         self.grants=[{'grant_id':ANCHOR,'record_id':'anchor-record','agent_id':'alpha','name':'Alpha','kind':'agent','environment':'here','agent_ids':['alpha'],'expires_at':1005,'revoked':False}]
     def publish(self):self.grants.extend(g for g in self.accepted if not any(v['record_id']==g['record_id'] for v in self.grants))
     def call(self,operation,data=None):
         if self.offline:raise DomainError('unavailable',503)
         if operation=='identity':return {'kind':'owner','id':self.owner_id}
-        if operation=='attention':return {'source':'checked','principal':{'kind':'owner','id':self.owner_id},'grants':copy.deepcopy(self.grants)}
+        if operation=='attention':
+            self.attention_calls.append(copy.deepcopy(data))
+            grants=self.grants if data is None else [g for g in self.grants if g['grant_id'] in data['grant_ids']]
+            return {'source':'checked','principal':{'kind':'owner','id':self.owner_id},'grants':copy.deepcopy(grants)}
         if operation=='prepare_enrollment':return {'expires_at':self.clock+3600 if self.prepared_expiry is None else self.prepared_expiry}
         if operation!='enroll':raise AssertionError('Unexpected owner operation')
         if data['expires_at']<=self.clock:raise DomainError('expired_body',400)
         self.calls.append(copy.deepcopy(data))
         if data['expires_at']>(self.clock+3600 if self.prepared_expiry is None else self.prepared_expiry):raise DomainError('owner_expiry_limit',400)
         if self.block:self.block[0].set();self.block[1].wait(3)
-        gid=str(uuid.uuid5(uuid.NAMESPACE_URL,data['agent_id']+data['intent_id']));rid=str(uuid.uuid5(uuid.NAMESPACE_URL,json.dumps(data,sort_keys=True)))
+        digest=hashlib.sha256((self.owner_id+':'+data['agent_id']+':'+data['intent_id']).encode()).hexdigest()
+        gid=digest[:8]+'-'+digest[8:12]+'-5'+digest[13:16]+'-a'+digest[17:20]+'-'+digest[20:32]
+        rid=str(uuid.uuid5(uuid.NAMESPACE_URL,json.dumps(data,sort_keys=True)))
         grant={**data,'record_id':rid,'grant_id':gid,'revoked':False}
         if not any(g['record_id']==rid for g in self.accepted):self.accepted.append(grant)
         if self.lose:self.lose=False;raise DomainError('response_lost',503)
@@ -51,6 +58,20 @@ class NativeRenewalTests(unittest.TestCase):
         private_write(self.config,{'url':self.owner.url,'enrollments':[{'anchor_grant_id':ANCHOR,'profile':str(self.profile)}]})
     def renewal(self):return Renewal(self.owner,self.config,self.state,lease_seconds=60,renew_before=30,now=lambda:self.owner.clock)
     def make_visible(self):self.renewal().tick();self.owner.publish();return self.renewal().tick()
+
+    def test_grant_read_selects_original_anchor_current_lease_and_pending_intent(self):
+        self.make_visible()
+        self.assertEqual(self.owner.attention_calls[0],{'grant_ids':[ANCHOR]})
+        entry=private_read(self.state)['entries'][ANCHOR]
+        self.owner.clock=1040;self.owner.lose=True
+        with patch('unblock.native_renewal.uuid.uuid4',return_value=uuid.UUID('33333333-3333-4333-8333-333333333333')):
+            self.assertFalse(self.renewal().tick()['checked'])
+        pending=private_read(self.state)['entries'][ANCHOR]['pending']['body']
+        self.owner.clock=pending['expires_at']+1
+        self.renewal().tick()
+        self.assertEqual(self.owner.attention_calls[-1],{
+            'grant_ids':sorted([ANCHOR,entry['latest']['grant_id'],'9211e501-1ed4-5fd3-a324-90ebd225cc98'])})
+        self.assertEqual(private_read(self.state)['entries'][ANCHOR]['pending']['body'],pending)
 
     def test_equal_expiry_preserves_valid_profile_across_restart_then_extends_once(self):
         self.assert_nonextending_lease_preserved(1060)
@@ -152,6 +173,7 @@ class NativeRenewalTests(unittest.TestCase):
             result=prepare_operator(self.owner,[self.profile],destination)
             lookup.assert_called_once_with('enrollment')
         self.assertTrue(result['prepared']);self.assertFalse(result['operator_started'])
+        self.assertEqual(self.owner.attention_calls[-1],{'grant_ids':[ANCHOR]})
         self.assertEqual(private_read(destination),{'url':self.owner.url,'owner_id':'owner','enrollments':[{'anchor_grant_id':ANCHOR,'profile':str(self.profile)}]});self.assertEqual(self.owner.calls,[])
         denied=self.root/'denied.json'
         with patch('unblock.native_client.NativeClient.call',return_value={**identity,'id':'neighbor'}):

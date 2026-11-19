@@ -40,15 +40,21 @@ def file_hash(path):
 def prepare_operator(owner,profiles,destination):
     """Select existing, verified connections; do not enroll or start anything."""
     if not 1<=len(profiles)<=20:raise ValueError('Select bounded existing private profiles')
-    me=owner.call('identity');work=owner.call('attention')
-    if me.get('kind')!='owner' or work.get('source')!='checked' or work.get('principal')!=me:raise DomainError('operator_owner_source_required',403)
-    selected=[]
+    me=owner.call('identity')
+    if me.get('kind')!='owner' or not me.get('id'):raise DomainError('operator_owner_source_required',403)
+    connections=[]
     for path in profiles:
         path=Path(path)
         if not path.is_absolute():raise ValueError('Use absolute private profiles')
         client=NativeClient.from_file(path)
         if client.url!=owner.url:raise ValueError('Profiles must use the same saved dashboard origin')
         connection=client.call('enrollment')
+        connections.append((path,connection))
+    grant_ids=[connection.get('grant_id') for _,connection in connections]
+    work=owner.call('attention',{'grant_ids':grant_ids})
+    if work.get('source')!='checked' or work.get('principal')!=me:raise DomainError('operator_owner_source_required',403)
+    selected=[]
+    for path,connection in connections:
         grants=[g for g in work['grants'] if g['grant_id']==connection.get('grant_id')]
         if len(grants)!=1 or grants[0].get('revoked'):raise DomainError('operator_connection_not_permitted',403)
         scope=Renewal._scope(grants[0])
@@ -102,7 +108,18 @@ class Renewal:
         if me.get('kind')!='owner' or not me.get('id'):raise DomainError('operator_owner_required',403)
         if self.config.get('owner_id',me['id'])!=me['id']:raise DomainError('operator_prepared_owner_changed',403)
         if state.get('owner_id',me['id'])!=me['id']:raise DomainError('operator_owner_changed',403)
-        work=self.owner.call('attention')
+        grant_ids=set()
+        for selected in self.config['enrollments']:
+            anchor=selected['anchor_grant_id'];grant_ids.add(anchor)
+            entry=state.get('entries',{}).get(anchor,{})
+            if entry.get('latest'):grant_ids.add(entry['latest']['grant_id'])
+            if entry.get('pending'):
+                body=entry['pending']['body']
+                # Match the deployed stableId(owner + ':' + agent + ':' + intent)
+                # contract even when an enrollment response was lost.
+                digest=hashlib.sha256((me['id']+':'+body['agent_id']+':'+body['intent_id']).encode()).hexdigest()
+                grant_ids.add(digest[:8]+'-'+digest[8:12]+'-5'+digest[13:16]+'-a'+digest[17:20]+'-'+digest[20:32])
+        work=self.owner.call('attention',{'grant_ids':sorted(grant_ids)})
         if work.get('source')!='checked' or work.get('principal')!=me or not isinstance(work.get('grants'),list):raise DomainError('operator_source_unverified',503)
         state['owner_id']=me['id']
         return work['grants']

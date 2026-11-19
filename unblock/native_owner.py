@@ -5,6 +5,8 @@ import shutil
 import subprocess
 import urllib.error
 import urllib.request
+from urllib.parse import urlencode
+import uuid
 from .native_client import NativeClient
 from .store import DomainError
 
@@ -28,14 +30,24 @@ class NativeOwner(NativeClient):
 
     def call(self,operation,data=None):
         if operation not in (*READ,'enroll'):raise ValueError('Unsupported owner renewal operation')
+        path='/api/unblock/'+operation
         if operation in READ:
-            if data is not None:raise ValueError('Owner reads do not accept query input')
+            if data is not None:
+                if operation!='attention' or not isinstance(data,dict) or set(data)!={'grant_ids'}:
+                    raise ValueError('Invalid owner renewal selection')
+                grants=data['grant_ids']
+                if not isinstance(grants,list) or not 1<=len(grants)<=60 or not all(isinstance(v,str) for v in grants):
+                    raise ValueError('Select one to sixty exact grants')
+                if len(set(grants))!=len(grants):
+                    raise ValueError('Duplicate renewal selectors')
+                grant_ids=[str(uuid.UUID(v)) for v in grants]
+                path+='?'+urlencode({'view':'renewal','grant_id':grant_ids},doseq=True)
             body=None
         else:
             if not isinstance(data,dict):raise ValueError('Enrollment requires a JSON object')
             body=json.dumps(data).encode()
             if len(body)>65536:raise ValueError('Enrollment exceeds request limit')
-        request=urllib.request.Request(self.url+'/api/unblock/'+operation,data=body,method='GET' if body is None else 'POST',headers={'Cookie':'fulcra_access_token='+self.token,'Origin':self.url,'Content-Type':'application/json'})
+        request=urllib.request.Request(self.url+path,data=body,method='GET' if body is None else 'POST',headers={'Cookie':'fulcra_access_token='+self.token,'Origin':self.url,'Content-Type':'application/json'})
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self,*_):return None
         opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
