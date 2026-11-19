@@ -4,6 +4,7 @@ import os
 import subprocess
 import threading
 import unittest
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 from unblock.store import DomainError
 try:
@@ -45,6 +46,26 @@ class NativeOwnerTests(unittest.TestCase):
             with self.assertRaises(DomainError) as error:client.call('attention')
             self.assertNotIn('fixture-secret',str(error.exception))
         self.assertEqual(len(self.seen),2);self.assertTrue(all(r['path']!='/forbidden' for r in self.seen))
+
+    def test_attention_selection_uses_bounded_owner_only_get_query(self):
+        client=NativeOwner(self.url,'fixture-secret')
+        grant='11111111-1111-4111-8111-111111111111'
+        selection={'grant_ids':[grant]}
+        client.call('attention',selection)
+        request=self.seen[-1]
+        parsed=urlsplit(request['path'])
+        self.assertEqual(parsed.path,'/api/unblock/attention')
+        self.assertEqual(parse_qs(parsed.query),{
+            'view':['renewal'],'grant_id':[grant]})
+        self.assertEqual(request['method'],'GET')
+        self.assertEqual(request['body'],b'')
+        for bad in ({'grant_ids':[]},
+                    {'grant_ids':[grant]*61},
+                    {'grant_ids':['foreign']},
+                    {'grant_ids':[grant],'extra':True},
+                    {'grant_ids':[grant],'intent_ids':['pending']}):
+            with self.assertRaises(ValueError):client.call('attention',bad)
+        self.assertEqual(len(self.seen),1)
     def test_existing_cli_token_is_captured_only_with_fixed_argv(self):
         with patch('shutil.which',return_value='/fixture/fulcra-api'),patch('subprocess.run') as run:
             run.return_value.returncode=0;run.return_value.stdout='fixture-secret\n';run.return_value.stderr=''

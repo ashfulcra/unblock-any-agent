@@ -24,6 +24,9 @@ async function handle({request,cookies,params,url}) {
         size+=value.length;if(size>65536){await reader.cancel();return json({outcome:'rejected',error:'Request too large'},{status:413,headers});}chunks.push(value);
       }
       body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    } else if (operation==='attention' && url.searchParams.has('view')) {
+      if ([...url.searchParams.keys()].some(key=>!['view','grant_id'].includes(key)) || url.searchParams.getAll('view').length!==1) throw new Error('Invalid renewal selection');
+      body={view:url.searchParams.get('view'),grant_ids:url.searchParams.getAll('grant_id')};
     } else body={request_id:url.searchParams.get('request_id') || undefined};
     const service=createService({ownerId:privateEnv.OWNER_USER_ID,annotation:privateEnv.UNBLOCK_ANNOTATION_ID,key:privateEnv.UNBLOCK_AGENT_KEY,apiEndpoint:env.PUBLIC_FULCRA_API_ENDPOINT});
     const result=await service.handle(operation,{body,token,cookieToken:token?undefined:cookies.get('fulcra_access_token')});
