@@ -103,8 +103,16 @@ class Renewal:
 
     def _save(self,state):replace_private(self.state,state)
 
+    def _owner_call(self,operation,data=None):
+        # Only the remote boundary converts transport failures. Local journal or
+        # profile timeouts must still stop the entire pass before later effects.
+        try:return self.owner.call(operation,data)
+        except urllib.error.HTTPError:raise
+        except (urllib.error.URLError,TimeoutError):
+            raise DomainError('operator_connection_transport_unavailable',503) from None
+
     def _grants(self,state):
-        me=self.owner.call('identity')
+        me=self._owner_call('identity')
         if me.get('kind')!='owner' or not me.get('id'):raise DomainError('operator_owner_required',403)
         if self.config.get('owner_id',me['id'])!=me['id']:raise DomainError('operator_prepared_owner_changed',403)
         if state.get('owner_id',me['id'])!=me['id']:raise DomainError('operator_owner_changed',403)
@@ -119,7 +127,7 @@ class Renewal:
                 # contract even when an enrollment response was lost.
                 digest=hashlib.sha256((me['id']+':'+body['agent_id']+':'+body['intent_id']).encode()).hexdigest()
                 grant_ids.add(digest[:8]+'-'+digest[8:12]+'-5'+digest[13:16]+'-a'+digest[17:20]+'-'+digest[20:32])
-        work=self.owner.call('attention',{'grant_ids':sorted(grant_ids)})
+        work=self._owner_call('attention',{'grant_ids':sorted(grant_ids)})
         if work.get('source')!='checked' or work.get('principal')!=me or not isinstance(work.get('grants'),list):raise DomainError('operator_source_unverified',503)
         state['owner_id']=me['id']
         return work['grants']
@@ -151,7 +159,7 @@ class Renewal:
         del entry['pending'];self._save(state)
 
     def tick(self):
-        state={};result={'checked':True,'renewed':0,'pending':0,'unchanged':0,'errors':[]}
+        state={};result={'checked':True,'renewed':0,'pending':0,'unchanged':0,'errors':[]};transport_failed=False
         try:
             with self._lock():
                 if self.state.exists():state=private_read(self.state)
@@ -161,8 +169,8 @@ class Renewal:
                 state.setdefault('entries',{});state['binding']=binding
                 for selected in binding['enrollments']:
                     anchor=selected['anchor_grant_id'];path=Path(selected['profile']);entry=state['entries'].setdefault(anchor,{})
-                    grants=self._grants(state)
                     try:
+                        grants=self._grants(state)
                         scope=self._anchor(grants,anchor,entry)
                         entry.setdefault('scope',scope);entry.setdefault('profile_hash',file_hash(path))
                         pending=entry.get('pending');current_hash=file_hash(path)
@@ -171,7 +179,7 @@ class Renewal:
                         if not pending and entry.get('latest',{}).get('expires_at',0)>self.now()+self.margin:
                             result['unchanged']+=1;continue
                         if not pending:
-                            expiry=min(self.owner.call('prepare_enrollment')['expires_at'],int(self.now())+self.lease)
+                            expiry=min(self._owner_call('prepare_enrollment')['expires_at'],int(self.now())+self.lease)
                             if expiry<=self.now():raise DomainError('operator_session_expired_reconnect',401)
                             # A capped owner session may offer no additional lifetime.
                             # Only defer a verified, published lease; pending effects
@@ -190,7 +198,7 @@ class Renewal:
                             result['pending']+=1
                             result['errors'].append({'anchor_grant_id':anchor,'code':'expired_intent_read_back_next_tick' if visible else 'expired_intent_pending_readback','repair':'Retain the exact expired intent until native readback verifies it. Only a verified expired record permits a new intent on a later tick.'})
                             continue
-                        response=self.owner.call('enroll',pending['body'])
+                        response=self._owner_call('enroll',pending['body'])
                         pending['response']={k:response[k] for k in ('record_id','grant_id','credential')}
                         self._save(state)
                         grants=self._grants(state);self._anchor(grants,anchor,entry)
@@ -214,6 +222,7 @@ class Renewal:
                         entry['profile_hash']=file_hash(path);entry['latest']={k:grant[k] for k in ('grant_id','record_id','expires_at')};del entry['pending'];self._save(state);result['renewed']+=1
                     except DomainError as error:
                         if error.code not in {
+                            'operator_connection_transport_unavailable',
                             'operator_anchor_missing_ambiguous_or_revoked',
                             'operator_latest_grant_missing_or_revoked',
                             'operator_latest_grant_changed_reconcile',
@@ -224,8 +233,10 @@ class Renewal:
                             'operator_enrollment_readback_mismatch',
                         }:raise
                         result['checked']=False
+                        transport_failed=transport_failed or error.code=='operator_connection_transport_unavailable'
                         result['errors'].append({'anchor_grant_id':anchor,'code':error.code,'repair':'Reconcile this selected connection; its pending state and private profile are retained. Other verified connections may still renew.'})
                 self._save(state)
+                if transport_failed:result['pending_known']=sum(bool(e.get('pending')) for e in state.get('entries',{}).values())
         except (DomainError,urllib.error.URLError,TimeoutError,OSError) as error:
             code=error.code if isinstance(error,DomainError) else 'operator_source_or_publication_unavailable'
             return {**result,'checked':False,'error':code,'pending_known':sum(bool(e.get('pending')) for e in state.get('entries',{}).values()),'repair':'Reconnect the owner CLI or reconcile the named enrollment/profile change. Retain pending intents and the previous private profiles.'}
