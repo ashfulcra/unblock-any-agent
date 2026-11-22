@@ -26,7 +26,7 @@ class NativeRenewalTransportTests(unittest.TestCase):
     def setUp(self):
         self.fresh_operator()
 
-    def fresh_operator(self):
+    def fresh_operator(self, bootstrap=True):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -41,13 +41,89 @@ class NativeRenewalTransportTests(unittest.TestCase):
         private_write(self.config, {'url': self.owner.url, 'enrollments': [
             {'anchor_grant_id': ANCHOR, 'profile': str(self.profiles[0])},
             {'anchor_grant_id': SECOND, 'profile': str(self.profiles[1])}]})
-        self.assertEqual(self.renewal().tick()['renewed'], 2)
+        if bootstrap:
+            self.assertEqual(self.renewal().tick()['renewed'], 2)
         self.before = [profile.read_bytes() for profile in self.profiles]
         self.owner.clock = 1040
 
     def renewal(self):
         return Renewal(self.owner, self.config, self.state, lease_seconds=60,
             renew_before=30, now=lambda: self.owner.clock)
+
+    def test_bootstrap_keeps_first_observed_owner_across_unverified_attention(self):
+        self.fresh_operator(bootstrap=False)
+        original = self.owner.call
+        identities = 0
+        def remote_call(operation, data=None):
+            nonlocal identities
+            if operation == 'identity':
+                identities += 1
+                if identities > 1:
+                    self.owner.owner_id = 'different-owner'
+            if operation == 'attention' and identities == 1:
+                raise TimeoutError('first owner attention unavailable')
+            return original(operation, data)
+        with patch.object(self.owner, 'call', side_effect=remote_call):
+            result = self.renewal().tick()
+        self.assertFalse(result['checked'])
+        self.assertEqual(result['renewed'], 0)
+        self.assertEqual(result['error'], 'operator_owner_changed')
+        self.assertEqual([profile.read_bytes() for profile in self.profiles], self.before)
+        self.assertEqual(self.owner.accepted, [])
+        self.assertFalse(self.state.exists())
+
+    def test_bootstrap_same_owner_can_verify_later_connection_after_attention_timeout(self):
+        self.fresh_operator(bootstrap=False)
+        original = self.owner.call
+        failed = False
+        def remote_call(operation, data=None):
+            nonlocal failed
+            if operation == 'attention' and not failed:
+                failed = True
+                raise TimeoutError('first attention unavailable')
+            return original(operation, data)
+        with patch.object(self.owner, 'call', side_effect=remote_call):
+            result = self.renewal().tick()
+        self.assertFalse(result['checked'])
+        self.assertEqual(result['renewed'], 1)
+        self.assertEqual(self.profiles[0].read_bytes(), self.before[0])
+        self.assertEqual(private_read(self.profiles[1])['expires_at'], 1100)
+        self.assertEqual(private_read(self.state)['owner_id'], 'owner')
+
+    def test_fatal_journal_error_reports_only_durably_retained_pending_intents(self):
+        self.assert_fatal_pending_readback(corrupt=False)
+
+    def test_fatal_journal_error_marks_pending_count_unknown_when_ledger_cannot_be_read(self):
+        self.assert_fatal_pending_readback(corrupt=True)
+
+    def assert_fatal_pending_readback(self, corrupt):
+        original_call = self.owner.call
+        original_save = Renewal._save
+        def remote_call(operation, data=None):
+            result = original_call(operation, data)
+            if operation == 'enroll' and data['agent_id'] == 'alpha':
+                raise TimeoutError('alpha response lost after acceptance')
+            return result
+        def save(renewal, state):
+            if state['entries'][SECOND].get('pending'):
+                if corrupt:
+                    self.state.write_text('unreadable retained journal')
+                raise OSError('beta journal save failed before enrollment')
+            return original_save(renewal, state)
+        accepted = len(self.owner.accepted)
+        with patch.object(self.owner, 'call', side_effect=remote_call), patch.object(Renewal, '_save', new=save):
+            result = self.renewal().tick()
+        self.assertFalse(result['checked'])
+        self.assertEqual(result['renewed'], 0)
+        self.assertEqual(result['pending_known'], None if corrupt else 1)
+        self.assertEqual([profile.read_bytes() for profile in self.profiles], self.before)
+        self.assertEqual(len(self.owner.accepted), accepted + 1)
+        if corrupt:
+            self.assertEqual(self.state.read_text(), 'unreadable retained journal')
+        else:
+            entries = private_read(self.state)['entries']
+            self.assertIn('pending', entries[ANCHOR])
+            self.assertNotIn('pending', entries[SECOND])
 
     def test_source_transport_timeout_preserves_first_profile_and_renews_later_connection(self):
         for operation in ('identity', 'attention', 'prepare_enrollment'):
@@ -157,7 +233,9 @@ class NativeRenewalTransportTests(unittest.TestCase):
                     nonlocal failed
                     if operation == 'identity' and not failed:
                         failed = True
-                        raise urllib.error.HTTPError(self.owner.url, status, 'response error', None, None)
+                        response = urllib.error.HTTPError(self.owner.url, status, 'response error', None, None)
+                        self.addCleanup(response.close)
+                        raise response
                     return original(operation, data)
                 with patch.object(self.owner, 'call', side_effect=remote_call):
                     result = self.renewal().tick()

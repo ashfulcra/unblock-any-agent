@@ -111,11 +111,14 @@ class Renewal:
         except (urllib.error.URLError,TimeoutError):
             raise DomainError('operator_connection_transport_unavailable',503) from None
 
-    def _grants(self,state):
+    def _grants(self,state,observed_owner=None):
         me=self._owner_call('identity')
         if me.get('kind')!='owner' or not me.get('id'):raise DomainError('operator_owner_required',403)
         if self.config.get('owner_id',me['id'])!=me['id']:raise DomainError('operator_prepared_owner_changed',403)
         if state.get('owner_id',me['id'])!=me['id']:raise DomainError('operator_owner_changed',403)
+        if observed_owner is not None:
+            if observed_owner.get('id',me['id'])!=me['id']:raise DomainError('operator_owner_changed',403)
+            observed_owner['id']=me['id']
         grant_ids=set()
         for selected in self.config['enrollments']:
             anchor=selected['anchor_grant_id'];grant_ids.add(anchor)
@@ -147,6 +150,19 @@ class Renewal:
             if any(current[0].get(field)!=entry['latest'].get(field) for field in ('record_id','expires_at')):raise DomainError('operator_latest_grant_changed_reconcile',409)
         return scope
 
+    def _retained_pending_count(self):
+        # A failed save may leave newer intents only in memory. Count the actual
+        # private journal, and keep a failed read unknown rather than inventing 0.
+        try:
+            saved=private_read(self.state)
+            entries=saved.get('entries') if isinstance(saved,dict) else None
+            if not isinstance(entries,dict) or any(not isinstance(entry,dict) for entry in entries.values()):return None
+            for entry in entries.values():
+                pending=entry.get('pending')
+                if pending is not None and (not isinstance(pending,dict) or not isinstance(pending.get('body'),dict)):return None
+            return sum(bool(entry.get('pending')) for entry in entries.values())
+        except (OSError,ValueError,TypeError,KeyError):return None
+
     def _retire_expired(self,state,entry,grant,path):
         pending=entry['pending']
         # A visible expired renewal remains in the ancestry even if never published.
@@ -159,7 +175,7 @@ class Renewal:
         del entry['pending'];self._save(state)
 
     def tick(self):
-        state={};result={'checked':True,'renewed':0,'pending':0,'unchanged':0,'errors':[]};transport_failed=False
+        state={};result={'checked':True,'renewed':0,'pending':0,'unchanged':0,'errors':[]};transport_failed=False;observed_owner={}
         try:
             with self._lock():
                 if self.state.exists():state=private_read(self.state)
@@ -170,7 +186,7 @@ class Renewal:
                 for selected in binding['enrollments']:
                     anchor=selected['anchor_grant_id'];path=Path(selected['profile']);entry=state['entries'].setdefault(anchor,{})
                     try:
-                        grants=self._grants(state)
+                        grants=self._grants(state,observed_owner)
                         scope=self._anchor(grants,anchor,entry)
                         entry.setdefault('scope',scope);entry.setdefault('profile_hash',file_hash(path))
                         pending=entry.get('pending');current_hash=file_hash(path)
@@ -201,7 +217,7 @@ class Renewal:
                         response=self._owner_call('enroll',pending['body'])
                         pending['response']={k:response[k] for k in ('record_id','grant_id','credential')}
                         self._save(state)
-                        grants=self._grants(state);self._anchor(grants,anchor,entry)
+                        grants=self._grants(state,observed_owner);self._anchor(grants,anchor,entry)
                         visible=[g for g in grants if g['record_id']==response['record_id']]
                         if not visible:
                             result['pending']+=1;continue
@@ -239,7 +255,7 @@ class Renewal:
                 if transport_failed:result['pending_known']=sum(bool(e.get('pending')) for e in state.get('entries',{}).values())
         except (DomainError,urllib.error.URLError,TimeoutError,OSError) as error:
             code=error.code if isinstance(error,DomainError) else 'operator_source_or_publication_unavailable'
-            return {**result,'checked':False,'error':code,'pending_known':sum(bool(e.get('pending')) for e in state.get('entries',{}).values()),'repair':'Reconnect the owner CLI or reconcile the named enrollment/profile change. Retain pending intents and the previous private profiles.'}
+            return {**result,'checked':False,'error':code,'pending_known':self._retained_pending_count(),'repair':'Reconnect the owner CLI or reconcile the named enrollment/profile change. Retain pending intents and the previous private profiles.'}
         return result
 
 
